@@ -26,10 +26,11 @@ const activeTargetX = computed(() => {
 const activeTargetY = computed(() => props.targetY + targetOffset.value);
 
 const pathParams = computed(() => ({
-    sourceX: props.sourceX - 14,
+    sourceX: props.sourceX,
     sourceY: props.sourceY,
     sourcePosition: Position.Right,
-    targetX: activeTargetX.value - 12, // Wire ends at back of plug
+    // -12: Wire ends perfectly at the back of the 12px-wide plug
+    targetX: activeTargetX.value - 12,
     targetY: activeTargetY.value,
     targetPosition: Position.Left,
 }));
