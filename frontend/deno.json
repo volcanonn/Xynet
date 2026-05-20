@@ -1,3 +1,7 @@
 {
-  "allowScripts": ["npm:esbuild@0.15.18", "npm:vue-demi@0.14.10"]
+  "allowScripts": ["npm:esbuild@0.15.18", "npm:vue-demi@0.14.10"],
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["dom", "dom.iterable", "dom.asynciterable", "deno.ns"]
+  }
 }
