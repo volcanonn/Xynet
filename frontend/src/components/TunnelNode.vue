@@ -3,6 +3,7 @@ import { Handle, Position, useVueFlow } from "@vue-flow/core";
 import type { NodeProps } from "@vue-flow/core";
 import { Shield } from "@lucide/vue";
 import { computed, inject } from "vue";
+import { useWireStacking } from "../composables/useWireStacking";
 
 interface TunnelNodeData {
     label: string;
@@ -31,27 +32,12 @@ const connectedEdges = computed(() =>
 );
 const isEmpty = computed(() => connectedEdges.value.length === 0);
 
-const ghostOffset = computed(() => {
-    if (!isHovered.value || !dragWire?.sourceId) return 0;
 
-    const connectedSources = connectedEdges.value.map((e) => e.source);
-    if (!connectedSources.includes(dragWire.sourceId)) {
-        connectedSources.push(dragWire.sourceId);
-    }
-
-    const uniqueSources = Array.from(new Set(connectedSources));
-    uniqueSources.sort((a, b) => {
-        const nodeA = findNode(a);
-        const nodeB = findNode(b);
-        const yA = nodeA?.computedPosition?.y ?? nodeA?.position?.y ?? 0;
-        const yB = nodeB?.computedPosition?.y ?? nodeB?.position?.y ?? 0;
-        return yA - yB;
-    });
-
-    const index = uniqueSources.indexOf(dragWire.sourceId);
-    if (index === -1) return 0;
-    return (index - (uniqueSources.length - 1) / 2) * 16;
-});
+const ghostOffset = useWireStacking(
+    () => props.id,
+    () => (isHovered.value ? dragWire?.sourceId : undefined),
+    dragWire
+);
 </script>
 
 <template>

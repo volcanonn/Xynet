@@ -2,6 +2,7 @@
 import { BaseEdge, getBezierPath, useVueFlow, Position } from "@vue-flow/core";
 import type { EdgeProps } from "@vue-flow/core";
 import { computed, inject } from "vue";
+import { useWireStacking } from "../composables/useWireStacking";
 
 const props = defineProps<EdgeProps>();
 const { edges, findNode } = useVueFlow();
@@ -9,32 +10,13 @@ const { edges, findNode } = useVueFlow();
 const dragWire = inject<any>("dragWire");
 const startPlugDrag = inject<Function>("startPlugDrag");
 
+
 // Target offset for stacking
-const targetOffset = computed(() => {
-    const connectedSources = edges.value
-        .filter((e) => e.target === props.target)
-        .map((e) => e.source);
-
-    // If there is an active drag, and it is hovering over our target, we need to make space!
-    if (dragWire?.active && dragWire?.hoveredTunnelId === props.target && dragWire?.sourceId) {
-        if (!connectedSources.includes(dragWire.sourceId)) {
-            connectedSources.push(dragWire.sourceId);
-        }
-    }
-
-    const uniqueSources = Array.from(new Set(connectedSources));
-    uniqueSources.sort((a, b) => {
-        const nodeA = findNode(a);
-        const nodeB = findNode(b);
-        const yA = nodeA?.computedPosition?.y ?? nodeA?.position?.y ?? 0;
-        const yB = nodeB?.computedPosition?.y ?? nodeB?.position?.y ?? 0;
-        return yA - yB;
-    });
-
-    const index = uniqueSources.indexOf(props.source);
-    if (index === -1) return 0;
-    return (index - (uniqueSources.length - 1) / 2) * 16;
-});
+const targetOffset = useWireStacking(
+    () => props.target,
+    () => props.source,
+    dragWire
+);
 
 const activeTargetX = computed(() => {
     const node = findNode(props.target);
