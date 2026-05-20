@@ -154,7 +154,6 @@ const ghostOffset = useWireStacking(
     top: 50%;
     pointer-events: none;
     z-index: 10;
-    transition: transform 0.2s ease;
 }
 .node-content {
     display: flex;

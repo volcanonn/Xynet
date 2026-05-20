@@ -23,7 +23,7 @@ const activeTargetX = computed(() => {
     if (!node) return props.targetX;
     return (node.computedPosition?.x ?? node.position.x) + 1;
 });
-const activeTargetY = computed(() => props.targetY + targetOffset.value);
+const activeTargetY = computed(() => props.targetY + (targetOffset.value ?? 0));
 
 const pathParams = computed(() => ({
     sourceX: props.sourceX,
@@ -57,7 +57,7 @@ export default { inheritAttrs: false };
         <!-- Interactive Plug -->
         <g
             :transform="`translate(${activeTargetX}, ${activeTargetY})`"
-            style="pointer-events: all; cursor: grab; transition: transform 0.15s ease;"
+            style="pointer-events: all; cursor: grab;"
             @pointerdown="onPointerDown"
         >
             <!-- Invisible larger hit area for easier grabbing -->
