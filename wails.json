@@ -2,9 +2,9 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "Xynet",
   "outputfilename": "Xynet",
-  "frontend:install": "npm install",
-  "frontend:build": "npm run build",
-  "frontend:dev:watcher": "npm run dev",
+  "frontend:install": "deno install",
+  "frontend:build": "deno run build",
+  "frontend:dev:watcher": "deno run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
     "name": "volcanonn",
