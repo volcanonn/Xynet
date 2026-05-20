@@ -258,6 +258,10 @@ const dragPath = () => {
                     <g :transform="`translate(${dragWire.mouseX}, ${dragWire.mouseY})`">
                         <rect x="-12" y="-4" width="12" height="8" rx="2" fill="var(--bg-card)" stroke="var(--accent-success)" stroke-width="1.5" />
                         <path d="M 0 -2 L 4 -2 M 0 2 L 4 2" stroke="var(--accent-success)" stroke-width="1.5" stroke-linecap="round" />
+                        <!-- Show Red X if hovering an app (top right offset) -->
+                        <g v-if="dragWire.hoveredAppId" transform="translate(8, -12)">
+                            <path d="M -4 -4 L 4 4 M -4 4 L 4 -4" stroke="var(--accent-danger)" stroke-width="2" stroke-linecap="round" />
+                        </g>
                     </g>
                 </g>
             </template>
@@ -273,13 +277,13 @@ const dragPath = () => {
                     :d="dragPath()"
                     fill="none" stroke="var(--accent-success)" stroke-width="2" opacity="0.8"
                 />
-                <!-- Show Red X if hovering an app, otherwise show plug -->
-                <g v-if="dragWire.hoveredAppId" :transform="`translate(${dragWire.mouseX}, ${dragWire.mouseY})`">
-                    <path d="M -10 -4 L -2 4 M -10 4 L -2 -4" stroke="var(--accent-danger)" stroke-width="2" stroke-linecap="round" />
-                </g>
-                <g v-else :transform="`translate(${dragWire.mouseX}, ${dragWire.mouseY})`">
+                <!-- Show plug and optionally the Red X if hovering an app -->
+                <g :transform="`translate(${dragWire.mouseX}, ${dragWire.mouseY})`">
                     <rect x="-12" y="-4" width="12" height="8" rx="2" fill="var(--bg-card)" stroke="var(--accent-success)" stroke-width="1.5" />
                     <path d="M 0 -2 L 4 -2 M 0 2 L 4 2" stroke="var(--accent-success)" stroke-width="1.5" stroke-linecap="round" />
+                    <g v-if="dragWire.hoveredAppId" transform="translate(8, -12)">
+                        <path d="M -4 -4 L 4 4 M -4 4 L 4 -4" stroke="var(--accent-danger)" stroke-width="2" stroke-linecap="round" />
+                    </g>
                 </g>
             </g>
         </svg>
