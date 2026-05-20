@@ -178,12 +178,14 @@ const onConnectStart = (event: any) => {
     dragWire.sourceY = srcPos.y;
     dragWire.originalEdgeId = "";
     dragWire.originalTarget = "";
-};
-const onConnectEnd = () => {
-    dragWire.active = false;
-    dragWire.sourceId = "";
-    dragWire.hoveredTunnelId = null;
-    dragWire.hoveredAppId = null;
+    
+    if (event?.event instanceof MouseEvent) {
+        const pos = screenToFlow(event.event.clientX, event.event.clientY);
+        dragWire.mouseX = pos.x;
+        dragWire.mouseY = pos.y;
+    }
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", onDragEnd);
 };
 
 // When Vue Flow fires a successful new connection
@@ -200,20 +202,6 @@ onConnect((connection: Connection) => {
         style: { stroke: "var(--accent-success)", strokeWidth: 2 },
     });
 });
-
-// Watch connectionPosition for new-connection hover detection
-const { connectionPosition } = useVueFlow();
-import { watch } from "vue";
-watch(
-    () => connectionPosition.value,
-    (pos) => {
-        // Only for NEW connections (not reconnections which use raw pointer events)
-        if (dragWire.active && !dragWire.originalEdgeId && pos) {
-            hitTest(pos.x, pos.y);
-        }
-    },
-    { deep: true },
-);
 
 // ── Node data ──
 const nodes = ref<Node[]>([
@@ -251,24 +239,23 @@ const dragPath = () => {
             :node-types="nodeTypes"
             :edge-types="edgeTypes"
             @connect-start="onConnectStart"
-            @connect-end="onConnectEnd"
+            @connect-end="onDragEnd"
             :default-zoom="1"
             :min-zoom="0.5"
             :max-zoom="2"
-            :connection-radius="60"
             fit-view-on-init
             class="xynet-theme"
         >
             <Background pattern-color="#27272a" />
 
             <!-- Connection line for NEW connections from app handle -->
-            <template #connection-line="{ sourceX, sourceY, targetX, targetY }">
+            <template #connection-line>
                 <g style="opacity: 0.8; pointer-events: none">
                     <path
-                        :d="getBezierPath({ sourceX, sourceY, sourcePosition: Position.Right, targetX: targetX - 12, targetY, targetPosition: Position.Left })[0]"
+                        :d="dragPath()"
                         fill="none" stroke="var(--accent-success)" stroke-width="2"
                     />
-                    <g :transform="`translate(${targetX}, ${targetY})`">
+                    <g :transform="`translate(${dragWire.mouseX}, ${dragWire.mouseY})`">
                         <rect x="-12" y="-4" width="12" height="8" rx="2" fill="var(--bg-card)" stroke="var(--accent-success)" stroke-width="1.5" />
                         <path d="M 0 -2 L 4 -2 M 0 2 L 4 2" stroke="var(--accent-success)" stroke-width="1.5" stroke-linecap="round" />
                     </g>
