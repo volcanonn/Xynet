@@ -27,6 +27,7 @@ html, body {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  user-select: none; /* Prevent accidental text selection highlights */
 }
 
 #app {

@@ -38,6 +38,7 @@ const path = computed(() => getBezierPath(pathParams.value));
 
 const onPointerDown = (e: PointerEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     if (startPlugDrag) {
         startPlugDrag(props.id, props.source, props.target, e);
     }
