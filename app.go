@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 )
 
 // App struct
@@ -28,8 +30,6 @@ func (a *App) Greet(name string) string {
 
 // GenerateSingboxConfig generates a base sing-box configuration with TUN, fakeip, and process_name rules.
 func (a *App) GenerateSingboxConfig(apps []map[string]string) string {
-	// A real implementation would serialize this to JSON properly
-	// This is just a scaffolding string based on the ticket requirements.
 	return `{
   "dns": {
     "fakeip": {
@@ -56,4 +56,21 @@ func (a *App) GenerateSingboxConfig(apps []map[string]string) string {
     ]
   }
 }`
+}
+
+// WriteConfig writes the configuration to a file.
+func (a *App) WriteConfig(path string, content string) error {
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// RestartSingbox restarts the sing-box service.
+func (a *App) RestartSingbox() error {
+	cmd := exec.Command("systemctl", "restart", "sing-box")
+	return cmd.Run()
+}
+
+// RunVopono executes a vopono command to run an app in a network namespace.
+func (a *App) RunVopono(appName string, network string) error {
+	cmd := exec.Command("vopono", "exec", network, appName)
+	return cmd.Start()
 }
