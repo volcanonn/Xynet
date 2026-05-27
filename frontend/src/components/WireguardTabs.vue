@@ -30,12 +30,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="wg-tabs-container">
+  <div class="wg-tabs-container" v-if="configs.length > 0">
     <div 
       v-for="(conf, index) in configs" 
       :key="index"
       class="wg-tab"
-      :style="{ top: `${20 + index * 70}px` }"
     >
       <div class="wg-tab-content">
         <Network class="wg-icon" :size="20" />
@@ -50,34 +49,31 @@ onMounted(async () => {
 
 <style scoped>
 .wg-tabs-container {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 0;
-  z-index: 1000;
-  pointer-events: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  width: 100%;
+  max-width: 800px;
+  justify-content: center;
 }
 
 .wg-tab {
-  position: absolute;
-  left: -200px;
   width: 240px;
   height: 60px;
   background-color: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-left: none;
-  border-radius: 0 8px 8px 0;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
   box-shadow: 2px 2px 8px rgba(0,0,0,0.2);
   display: flex;
   align-items: center;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  pointer-events: auto;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
 }
 
 .wg-tab:hover {
-  transform: translateX(200px);
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 12px rgba(0,0,0,0.3);
 }
 
 .wg-tab-content {

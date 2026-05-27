@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { Globe, X } from '@lucide/vue';
 import { ImportWireguardConfig } from '../../../wailsjs/go/main/App';
+import WireguardTabs from '../WireguardTabs.vue';
 
 interface ConfigItem {
   id: number;
@@ -53,6 +54,8 @@ const closeTab = (id: number) => {
       <p>Proxy group and node management will be displayed here.</p>
       <button @click="importConfig" class="import-btn">Import WireGuard Config</button>
     </div>
+
+    <WireguardTabs />
 
     <div v-if="configs.length > 0" class="tabs-container">
       <transition-group name="tab-list" tag="div" class="tabs-header">
