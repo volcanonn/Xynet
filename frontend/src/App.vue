@@ -7,12 +7,14 @@ import Dashboard from './components/views/Dashboard.vue';
 import Proxies from './components/views/Proxies.vue';
 import Logs from './components/views/Logs.vue';
 import Settings from './components/views/Settings.vue';
+import WireguardTabs from './components/WireguardTabs.vue';
 
 const activeTab = ref('routing');
 </script>
 
 <template>
   <div class="app-layout">
+    <WireguardTabs />
     <Sidebar v-model="activeTab" />
     <div class="main-content">
       <Header />
