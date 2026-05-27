@@ -5,3 +5,19 @@
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
+
+export function WriteSingboxConfig(arg1) {
+  return window['go']['main']['App']['WriteSingboxConfig'](arg1);
+}
+
+export function RestartSingbox() {
+  return window['go']['main']['App']['RestartSingbox']();
+}
+
+export function ExecVopono(arg1, arg2) {
+  return window['go']['main']['App']['ExecVopono'](arg1, arg2);
+}
+
+export function ImportWireguardConfig() {
+  return window['go']['main']['App']['ImportWireguardConfig']();
+}
