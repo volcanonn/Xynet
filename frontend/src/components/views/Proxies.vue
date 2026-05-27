@@ -209,9 +209,6 @@ h2 {
   opacity: 0;
   transform: translateY(10px);
 }
-.tab-list-leave-active {
-  position: absolute;
-}
 
 .fade-enter-active,
 .fade-leave-active {
