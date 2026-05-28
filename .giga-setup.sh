@@ -7,5 +7,5 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 # The AI will now inherit this exact PATH!
 export PATH="$PATH:$(go env GOPATH)/bin"
 
-# If you need vue-tsc, you can just add:
-npm install -g vue-tsc
+# If you need vue-tsc, use Deno instead of npm:
+deno install --allow-scripts --global -A npm:vue-tsc
