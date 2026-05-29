@@ -16,7 +16,6 @@ onMounted(async () => {
     if (w.go && w.go.main && w.go.main.App && w.go.main.App.GetWireguardConfigs) {
       configs.value = await w.go.main.App.GetWireguardConfigs();
     } else {
-      // Fallback dummy data if wails backend is not available
       configs.value = [
         { name: 'wg0', isAirvpn: false },
         { name: 'airvpn_nl', isAirvpn: true, usageData: '12.4 GB / 50 GB' },
@@ -52,10 +51,13 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;
-  margin-bottom: 2rem;
+  margin: 0 auto 2rem auto;
   width: 100%;
   max-width: 800px;
   justify-content: center;
+  align-items: center;
+  position: relative;
+  z-index: 10;
 }
 
 .wg-tab {
@@ -69,6 +71,7 @@ onMounted(async () => {
   align-items: center;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
+  position: relative;
 }
 
 .wg-tab:hover {
