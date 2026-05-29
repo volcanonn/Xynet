@@ -50,8 +50,14 @@ func (a *App) ExecVopono(appName string, configName string) (string, error) {
 	return string(output), err
 }
 
+// ImportedProxy represents an imported configuration file
+type ImportedProxy struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
 // ImportWireguardConfig opens a file dialog to select a wireguard config file
-func (a *App) ImportWireguardConfig() (string, error) {
+func (a *App) ImportWireguardConfig() (ImportedProxy, error) {
 	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select Wireguard Config",
 		Filters: []runtime.FileFilter{
@@ -62,26 +68,17 @@ func (a *App) ImportWireguardConfig() (string, error) {
 		},
 	})
 	if err != nil || selection == "" {
-		return "", err
+		return ImportedProxy{}, err
 	}
 
 	// Read the file content
 	content, err := os.ReadFile(selection)
-	return string(content), err
-}
-
-// WgConfig represents a WireGuard configuration file
-type WgConfig struct {
-	Name      string `json:"name"`
-	IsAirvpn  bool   `json:"isAirvpn"`
-	UsageData string `json:"usageData,omitempty"`
-}
-
-// GetWireguardConfigs returns a list of parsed wireguard configurations
-func (a *App) GetWireguardConfigs() []WgConfig {
-	return []WgConfig{
-		{Name: "wg0", IsAirvpn: false},
-		{Name: "airvpn_nl", IsAirvpn: true, UsageData: "12.4 GB / 50 GB"},
-		{Name: "airvpn_us", IsAirvpn: true, UsageData: "3.1 GB / 50 GB"},
+	if err != nil {
+		return ImportedProxy{}, err
 	}
+
+	name := filepath.Base(selection)
+	return ImportedProxy{Name: name, Content: string(content)}, nil
 }
+
+
