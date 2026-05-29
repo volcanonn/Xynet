@@ -6,10 +6,6 @@ export function ExecVopono(arg1, arg2) {
   return window['go']['main']['App']['ExecVopono'](arg1, arg2);
 }
 
-export function GetWireguardConfigs() {
-  return window['go']['main']['App']['GetWireguardConfigs']();
-}
-
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }

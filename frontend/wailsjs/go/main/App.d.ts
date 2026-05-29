@@ -4,11 +4,9 @@ import {main} from '../models';
 
 export function ExecVopono(arg1:string,arg2:string):Promise<string>;
 
-export function GetWireguardConfigs():Promise<Array<main.WgConfig>>;
-
 export function Greet(arg1:string):Promise<string>;
 
-export function ImportWireguardConfig():Promise<string>;
+export function ImportWireguardConfig():Promise<any>;
 
 export function RestartSingbox():Promise<void>;
 
