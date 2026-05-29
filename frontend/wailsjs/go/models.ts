@@ -1,19 +1,17 @@
 export namespace main {
 	
-	export class WgConfig {
+	export class ImportedProxy {
 	    name: string;
-	    isAirvpn: boolean;
-	    usageData?: string;
+	    content: string;
 	
 	    static createFrom(source: any = {}) {
-	        return new WgConfig(source);
+	        return new ImportedProxy(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
-	        this.isAirvpn = source["isAirvpn"];
-	        this.usageData = source["usageData"];
+	        this.content = source["content"];
 	    }
 	}
 
