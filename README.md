@@ -52,6 +52,10 @@ Wails Compilation: Must ALWAYS be run with the WebKit 4.1 tag due to Arch Linux 
 
 Command: wails dev -tags webkit2_41
 
+If wails is not found then run
+
+Command: export PATH="$PATH:$(go env GOPATH)/bin"
+
 Deno over NPM: Node.js/NPM is banned in this project.
 
 wails.json has been modified so frontend:Install uses deno install.
@@ -83,4 +87,3 @@ Provide Vue 3 <script setup lang="ts"> code using Vue Flow to render the UI.
 If asked to generate Sing-box configurations, ensure they utilize the tun interface, fakeip for DNS, and process_name rules.
 
 Prioritize performance and security. Do not suggest adding Electron, Node.js, or heavy web dependencies unless strictly necessary.
-

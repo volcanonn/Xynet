@@ -6,15 +6,22 @@ export function useWireStacking(
     sourceId: string | (() => string | undefined),
     dragWire: any
 ) {
-    const { edges, findNode } = useVueFlow();
+    let vueFlow: any = null;
+    try {
+        vueFlow = useVueFlow();
+    } catch (e) {
+        // Ignore error when rendered outside VueFlow context
+    }
+    const edges = vueFlow?.edges || { value: [] };
+    const findNode = vueFlow?.findNode || (() => null);
 
     const rawOffset = computed(() => {
         const tId = typeof targetId === "function" ? targetId() : targetId;
         const sId = typeof sourceId === "function" ? sourceId() : sourceId;
 
         const connectedSources = edges.value
-            .filter((e) => e.target === tId && e.id !== dragWire?.originalEdgeId)
-            .map((e) => e.source);
+            .filter((e: any) => e.target === tId && e.id !== dragWire?.originalEdgeId)
+            .map((e: any) => e.source);
 
         if (dragWire?.active && dragWire?.hoveredTunnelId === tId && dragWire?.sourceId) {
             if (!connectedSources.includes(dragWire.sourceId)) {

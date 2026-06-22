@@ -17,33 +17,76 @@ const toggleMode = () => {
             `Are you sure you want to switch ${props.data.label} to ${nextMode} mode?`,
         )
     ) {
-        props.data.mode = nextMode;
+        updateNodeData(props.id, { mode: nextMode });
     }
 };
 
-const { getConnectedEdges } = useVueFlow();
+// Only call useVueFlow if we are actually rendered inside a VueFlow instance.
+// The drag preview node renders this component *outside* of the Flow context,
+// so we use optional chaining/fallback defaults.
+let vueFlow: any = null;
+try {
+    vueFlow = useVueFlow();
+} catch (e) {
+    // Ignore error when rendered outside VueFlow context (drag preview)
+}
+
+const getConnectedEdges = vueFlow?.getConnectedEdges || (() => []);
+const updateNodeData = vueFlow?.updateNodeData || (() => {});
+const findNode = vueFlow?.findNode || (() => null);
 const hasConnection = computed(() => getConnectedEdges(props.id).length > 0);
+const isInFlow = computed(() => !!findNode(props.id));
+
+import { ExecVopono } from "../../wailsjs/go/main/App";
+
+const launchStrictApp = async () => {
+    const edges = getConnectedEdges(props.id);
+    if (edges.length === 0) return;
+    const targetNode = findNode(edges[0].target);
+    if (!targetNode) return;
+
+    try {
+        await ExecVopono(props.data.label.toLowerCase(), targetNode.data.label);
+        // We could show a toast here
+        console.log("Launched vopono for", props.data.label);
+    } catch (e) {
+        console.error("Failed to launch strict app:", e);
+        alert(`Failed to launch: ${e}`);
+    }
+};
 </script>
 
 <template>
     <div class="app-node">
         <div class="node-content">
             <div class="icon-container">
-                <div class="icon-placeholder"></div>
+                <img v-if="data.icon" :src="data.icon" class="icon-img" />
+                <div v-else class="icon-placeholder"></div>
             </div>
             <div class="info">
                 <span class="label">{{ data.label }}</span>
-                <span
-                    class="mode-badge"
-                    :class="data.mode.toLowerCase()"
-                    @click="toggleMode"
-                    title="Click to toggle mode"
-                    >{{ data.mode }}</span
-                >
+                <div class="mode-actions">
+                    <span
+                        class="mode-badge"
+                        :class="data.mode.toLowerCase()"
+                        @click="toggleMode"
+                        title="Click to toggle mode"
+                        >{{ data.mode }}</span
+                    >
+                    <button
+                        v-if="data.mode === 'Strict' && hasConnection"
+                        class="launch-btn"
+                        @click.stop="launchStrictApp"
+                        title="Launch App in Strict Mode"
+                    >
+                        Launch
+                    </button>
+                </div>
             </div>
         </div>
 
         <Handle
+            v-if="isInFlow"
             id="source"
             type="source"
             :position="Position.Right"
@@ -92,6 +135,12 @@ const hasConnection = computed(() => getConnectedEdges(props.id).length > 0);
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    overflow: hidden;
+}
+.icon-img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
 }
 .icon-placeholder {
     width: 16px;
@@ -112,6 +161,25 @@ const hasConnection = computed(() => getConnectedEdges(props.id).length > 0);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.mode-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+.launch-btn {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    border: none;
+    background-color: var(--accent-primary);
+    color: white;
+    cursor: pointer;
+    transition: filter 0.2s;
+}
+.launch-btn:hover {
+    filter: brightness(1.2);
 }
 .mode-badge {
     font-size: 0.65rem;

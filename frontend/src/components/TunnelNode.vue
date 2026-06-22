@@ -11,7 +11,15 @@ interface TunnelNodeData {
     type: "WireGuard" | "Hysteria2" | "Bypass" | "Block";
 }
 const props = defineProps<NodeProps<TunnelNodeData>>();
-const { edges, findNode } = useVueFlow();
+let vueFlow: any = null;
+try {
+    vueFlow = useVueFlow();
+} catch (e) {
+    // Ignore error when rendered outside VueFlow context (drag preview)
+}
+
+const edges = vueFlow?.edges || { value: [] };
+const findNode = vueFlow?.findNode || (() => null);
 const dragWire = inject<any>("dragWire");
 const getLatencyColor = (latency?: string) => {
     if (!latency) return "var(--text-secondary)";
@@ -31,6 +39,7 @@ const connectedEdges = computed(() =>
     ),
 );
 const isEmpty = computed(() => connectedEdges.value.length === 0);
+const isInFlow = computed(() => !!findNode(props.id));
 
 
 const ghostOffset = useWireStacking(
@@ -43,6 +52,7 @@ const ghostOffset = useWireStacking(
 <template>
     <div class="tunnel-node" :class="{ 'pulse-animate': isHovered && isEmpty }">
         <Handle
+            v-if="isInFlow"
             id="target"
             type="target"
             :position="Position.Left"

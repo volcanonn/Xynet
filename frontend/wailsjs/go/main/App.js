@@ -6,6 +6,10 @@ export function ExecVopono(arg1, arg2) {
   return window['go']['main']['App']['ExecVopono'](arg1, arg2);
 }
 
+export function GetServiceStatus() {
+  return window['go']['main']['App']['GetServiceStatus']();
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
@@ -14,8 +18,32 @@ export function ImportWireguardConfig() {
   return window['go']['main']['App']['ImportWireguardConfig']();
 }
 
+export function KillVopono(arg1) {
+  return window['go']['main']['App']['KillVopono'](arg1);
+}
+
+export function ListDesktopApps() {
+  return window['go']['main']['App']['ListDesktopApps']();
+}
+
+export function ListVoponoProcesses() {
+  return window['go']['main']['App']['ListVoponoProcesses']();
+}
+
+export function LoadState() {
+  return window['go']['main']['App']['LoadState']();
+}
+
 export function RestartSingbox() {
   return window['go']['main']['App']['RestartSingbox']();
+}
+
+export function SaveState(arg1) {
+  return window['go']['main']['App']['SaveState'](arg1);
+}
+
+export function StopSingbox() {
+  return window['go']['main']['App']['StopSingbox']();
 }
 
 export function WriteSingboxConfig(arg1) {
