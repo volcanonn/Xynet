@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function Deploy(arg1:Array<main.RoutingRule>):Promise<void>;
 
+export function EmitLog(arg1:string,arg2:string):Promise<void>;
+
 export function GetBackendStatus():Promise<main.BackendStatus>;
 
 export function GetServiceStatus():Promise<main.ServiceStatus>;

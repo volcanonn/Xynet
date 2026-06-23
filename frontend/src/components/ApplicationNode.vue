@@ -5,6 +5,7 @@ import { computed, ref } from "vue";
 import { Play } from "@lucide/vue";
 import { useAppState } from "../composables/useAppState";
 import { LaunchStrict } from "../../wailsjs/go/main/App";
+import { useToast } from "../composables/useToast";
 
 interface AppNodeData {
     label: string;
@@ -29,6 +30,7 @@ const isInFlow = computed(() => !!findNode(props.id));
 
 const mode = computed(() => props.data.mode || "Standard");
 const launching = ref(false);
+const toast = useToast();
 
 const connectedTunnel = computed(() => {
     const edges = getConnectedEdges(props.id);
@@ -62,8 +64,7 @@ const launchApp = async () => {
     try {
         await LaunchStrict(props.data.processName, tunnel.data.label);
     } catch (e) {
-        console.error("Failed to launch:", e);
-        alert(`Failed to launch: ${e}`);
+        toast.error(`Failed to launch: ${e}`);
     } finally {
         launching.value = false;
     }

@@ -3,8 +3,10 @@ import { computed, ref } from 'vue';
 import { Globe, X, Edit2, ChevronDown, ChevronRight, Check } from '@lucide/vue';
 import { ImportWireguardConfig } from '../../../wailsjs/go/main/App';
 import { useAppState } from '../../composables/useAppState';
+import { useToast } from '../../composables/useToast';
 
 const { appState, saveState } = useAppState();
+const toast = useToast();
 
 interface ProxyConfig {
   name: string;
@@ -101,9 +103,10 @@ const importConfig = async () => {
         appState.value.proxies.push({ name: imported.name, content: imported.content });
       }
       saveState();
+      toast.success('Config imported successfully');
     }
   } catch (e) {
-    console.error("Failed to import config", e);
+    toast.error(`Import failed: ${e}`);
   }
 };
 

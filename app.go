@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -14,6 +15,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Source    string `json:"source"`
+	Message   string `json:"message"`
+}
 
 // App struct
 type App struct {
@@ -49,6 +56,16 @@ func (a *App) startup(ctx context.Context) {
 }
 
 // shutdown is called when the app is closing
+func (a *App) EmitLog(source, msg string) {
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "app-log", LogEntry{
+			Timestamp: time.Now().Format("15:04:05"),
+			Source:    source,
+			Message:   msg,
+		})
+	}
+}
+
 func (a *App) shutdown(ctx context.Context) {
 	a.StopSingbox()
 
@@ -111,6 +128,9 @@ func (a *App) LaunchStrict(processName string, tunnelLabel string) (VoponoProces
 	}
 
 	cmd := exec.Command("pkexec", "vopono", "exec", "--custom", confPath, processName)
+	
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
 
 	if err := cmd.Start(); err != nil {
 		return VoponoProcess{}, fmt.Errorf("failed to start vopono: %v", err)
@@ -130,6 +150,19 @@ func (a *App) LaunchStrict(processName string, tunnelLabel string) (VoponoProces
 	a.voponoMu.Unlock()
 
 	go func(processID string) {
+		go func() {
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				a.EmitLog("vopono-"+processName, scanner.Text())
+			}
+		}()
+		go func() {
+			scanner := bufio.NewScanner(stderr)
+			for scanner.Scan() {
+				a.EmitLog("vopono-"+processName, scanner.Text())
+			}
+		}()
+
 		cmd.Wait()
 
 		a.voponoMu.Lock()
@@ -257,8 +290,15 @@ func (a *App) ImportWireguardConfig() (ImportedProxy, error) {
 		return ImportedProxy{}, err
 	}
 
+	contentStr := string(content)
+
+	// Validate content
+	if _, err := ParseWireGuardConfig(contentStr); err != nil && !strings.HasPrefix(strings.TrimSpace(contentStr), "hysteria2://") {
+		return ImportedProxy{}, fmt.Errorf("invalid config format: must be valid WireGuard .conf or hysteria2:// URI")
+	}
+
 	name := filepath.Base(selection)
-	return ImportedProxy{Name: name, Content: string(content)}, nil
+	return ImportedProxy{Name: name, Content: contentStr}, nil
 }
 
 // RoutingRule represents a process-to-tunnel mapping

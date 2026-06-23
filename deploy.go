@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
+	"text/template"
 	"net"
 	"os"
 	"os/exec"
@@ -14,8 +18,15 @@ import (
 )
 
 var (
-	singboxCmd   *exec.Cmd
-	singboxMu    sync.Mutex
+	singboxCmd      *exec.Cmd
+	singboxMu       sync.Mutex
+	intentionalStop bool
+
+	daeLogCmd       *exec.Cmd
+	daeLogMu        sync.Mutex
+
+	//go:embed templates/dae.tmpl
+	daeTemplateStr string
 )
 
 // Deploy sends routing rules to the configured backend
@@ -313,12 +324,33 @@ func (a *App) deploySingbox(rules []RoutingRule, state AppState) error {
 
 	// Stop any existing sing-box process
 	a.StopSingbox()
+	
+	singboxMu.Lock()
+	intentionalStop = false
+	singboxMu.Unlock()
 
 	// Start sing-box as a subprocess with pkexec for TUN privileges
 	cmd := exec.Command("pkexec", singboxPath, "run", "-c", configPath)
+	
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start sing-box: %w", err)
 	}
+
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			a.EmitLog("sing-box", scanner.Text())
+		}
+	}()
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			a.EmitLog("sing-box", scanner.Text())
+		}
+	}()
 
 	singboxMu.Lock()
 	singboxCmd = cmd
@@ -328,10 +360,22 @@ func (a *App) deploySingbox(rules []RoutingRule, state AppState) error {
 	go func() {
 		cmd.Wait()
 		singboxMu.Lock()
+		isIntentional := intentionalStop
 		if singboxCmd == cmd {
 			singboxCmd = nil
 		}
 		singboxMu.Unlock()
+
+		if !isIntentional && a.ctx != nil {
+			time.Sleep(3 * time.Second)
+			singboxMu.Lock()
+			stillUnintentional := !intentionalStop
+			noNewCmd := singboxCmd == nil
+			singboxMu.Unlock()
+			if stillUnintentional && noNewCmd {
+				a.deploySingbox(rules, state)
+			}
+		}
 	}()
 
 	return nil
@@ -345,6 +389,7 @@ func (a *App) RestartSingbox() error {
 // StopSingbox stops the sing-box subprocess
 func (a *App) StopSingbox() error {
 	singboxMu.Lock()
+	intentionalStop = true
 	cmd := singboxCmd
 	singboxMu.Unlock()
 
@@ -407,8 +452,7 @@ func (a *App) deployDae(rules []RoutingRule, state AppState) error {
 	}
 
 	var routingLines []string
-	var scriptLines []string
-	scriptLines = append(scriptLines, "#!/bin/bash", "set -e")
+	var daeCmds []string
 
 	fwmarkBase := uint32(0x4E01)
 	tableBase := 100
@@ -443,7 +487,7 @@ func (a *App) deployDae(rules []RoutingRule, state AppState) error {
 				table := tableBase + len(seenTunnels) - 1
 				ifName := rule.TunnelLabel
 
-				scriptLines = append(scriptLines,
+				daeCmds = append(daeCmds,
 					fmt.Sprintf("wg-quick down %q 2>/dev/null || true", confPath),
 					fmt.Sprintf("wg-quick up %q", confPath),
 					fmt.Sprintf("ip rule del fwmark 0x%x table %d 2>/dev/null || true", fwmark, table),
@@ -458,58 +502,83 @@ func (a *App) deployDae(rules []RoutingRule, state AppState) error {
 
 	routingLines = append(routingLines, "    fallback: direct")
 
-	daeConfig := fmt.Sprintf(`global {
-    wan_interface: auto
-    log_level: info
-    auto_config_kernel_parameter: true
-}
-
-routing {
-%s
-}
-`, strings.Join(routingLines, "\n"))
+	tmpl, err := template.New("dae").Parse(daeTemplateStr)
+	if err != nil {
+		return err
+	}
+	var rendered bytes.Buffer
+	if err := tmpl.Execute(&rendered, map[string]interface{}{"Routing": strings.Join(routingLines, "\n")}); err != nil {
+		return err
+	}
 
 	daeConfigPath := filepath.Join(configDir, "xynet", "config.dae")
-	if err := os.WriteFile(daeConfigPath, []byte(daeConfig), 0644); err != nil {
+	if err := os.WriteFile(daeConfigPath, rendered.Bytes(), 0644); err != nil {
 		return fmt.Errorf("write dae config: %w", err)
 	}
 
-	scriptLines = append(scriptLines,
+	daeCmds = append(daeCmds,
 		"mkdir -p /etc/dae",
 		fmt.Sprintf("cp %q /etc/dae/config.dae", daeConfigPath),
 		"systemctl reload-or-restart dae",
 	)
 
-	scriptPath := filepath.Join(configDir, "xynet", "dae_deploy.sh")
-	if err := os.WriteFile(scriptPath, []byte(strings.Join(scriptLines, "\n")), 0700); err != nil {
-		return fmt.Errorf("write dae deploy script: %w", err)
+	if len(daeCmds) > 0 {
+		cmd := exec.Command("pkexec", "sh", "-c", strings.Join(daeCmds, " && "))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("dae deploy commands failed: %s (%w)", string(out), err)
+		}
 	}
 
-	cmd := exec.Command("pkexec", "bash", scriptPath)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("dae deploy script failed: %s (%w)", string(out), err)
+	daeLogMu.Lock()
+	if daeLogCmd != nil && daeLogCmd.Process != nil {
+		daeLogCmd.Process.Kill()
 	}
+	daeLogCmd = exec.Command("journalctl", "-u", "dae", "-f", "-n", "0")
+	stdout, _ := daeLogCmd.StdoutPipe()
+	if err := daeLogCmd.Start(); err == nil {
+		go func() {
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				a.EmitLog("dae", scanner.Text())
+			}
+			daeLogCmd.Wait()
+		}()
+	}
+	daeLogMu.Unlock()
 
 	return nil
 }
 
 func (a *App) stopDae() error {
+	daeLogMu.Lock()
+	if daeLogCmd != nil && daeLogCmd.Process != nil {
+		daeLogCmd.Process.Kill()
+		daeLogCmd = nil
+	}
+	daeLogMu.Unlock()
+
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return err
 	}
-	scriptPath := filepath.Join(configDir, "xynet", "dae_stop.sh")
-	scriptContent := `#!/bin/bash
-systemctl stop dae
-for conf in ~/.config/xynet/wg-configs/*.conf; do
-  if [ -f "$conf" ]; then
-    wg-quick down "$conf" 2>/dev/null || true
-  fi
-done
-ip rule flush fwmark 0x4E01/0xFFFF 2>/dev/null || true
-`
-	os.WriteFile(scriptPath, []byte(scriptContent), 0700)
-	return exec.Command("pkexec", "bash", scriptPath).Run()
+
+	var cmds []string
+	cmds = append(cmds, "systemctl stop dae || true")
+
+	wgDir := filepath.Join(configDir, "xynet", "wg-configs")
+	if entries, err := os.ReadDir(wgDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".conf") {
+				confPath := filepath.Join(wgDir, entry.Name())
+				cmds = append(cmds, fmt.Sprintf("wg-quick down %q 2>/dev/null || true", confPath))
+			}
+		}
+	}
+
+	cmds = append(cmds, "ip rule flush fwmark 0x4E01/0xFFFF 2>/dev/null || true")
+
+	exec.Command("pkexec", "sh", "-c", strings.Join(cmds, " ; ")).Run()
+	return nil
 }
 
 // buildProxyMap maps tunnel labels to their proxy configs

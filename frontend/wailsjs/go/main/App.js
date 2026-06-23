@@ -6,6 +6,10 @@ export function Deploy(arg1) {
   return window['go']['main']['App']['Deploy'](arg1);
 }
 
+export function EmitLog(arg1, arg2) {
+  return window['go']['main']['App']['EmitLog'](arg1, arg2);
+}
+
 export function GetBackendStatus() {
   return window['go']['main']['App']['GetBackendStatus']();
 }

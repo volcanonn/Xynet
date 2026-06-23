@@ -5,8 +5,10 @@ import { useAppState } from '../composables/useAppState';
 import { generateRoutingRules } from '../composables/routeGenerator';
 import { Deploy, Undeploy, GetBackendStatus, ListVoponoProcesses } from '../../wailsjs/go/main/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
+import { useToast } from '../composables/useToast';
 
 const { appState } = useAppState();
+const toast = useToast();
 
 const upload = ref(0);
 const download = ref(0);
@@ -88,7 +90,7 @@ const undeployConfig = async () => {
         await Undeploy();
         await checkStatus();
     } catch (e) {
-        console.error("Failed to undeploy:", e);
+        toast.error(`Undeploy failed: ${e}`);
     } finally {
         deploying.value = false;
     }
@@ -102,8 +104,7 @@ const deployConfig = async () => {
         await Deploy(rules);
         await checkStatus();
     } catch (e) {
-        console.error("Failed to deploy:", e);
-        alert(`Failed to deploy: ${e}`);
+        toast.error(`Deploy failed: ${e}`);
     } finally {
         deploying.value = false;
     }

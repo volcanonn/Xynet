@@ -12,6 +12,7 @@ import WireEdge from "./WireEdge.vue";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/core/dist/theme-default.css";
 import { useAppState } from "../composables/useAppState";
+import { useToast } from "../composables/useToast";
 import { ListDesktopApps, ImportWireguardConfig } from "../../wailsjs/go/main/App";
 
 const nodeTypes = {
@@ -328,6 +329,7 @@ const availableOutputs = ref<any[]>([]);
 
 const showInputsList = ref(false);
 const showOutputsList = ref(false);
+const toast = useToast();
 
 const importConfig = async () => {
     try {
@@ -343,9 +345,10 @@ const importConfig = async () => {
                 latency: "--",
             });
             saveState();
+            toast.success('Config imported successfully');
         }
     } catch (e) {
-        console.error("Failed to import config:", e);
+        toast.error(`Import failed: ${e}`);
     }
 };
 
