@@ -8,7 +8,6 @@ url="https://github.com/volcanonn/Xynet"
 license=('GPL-3.0-or-later')
 depends=('sing-box' 'webkit2gtk-4.1' 'gtk3')
 optdepends=(
-    'dae: eBPF kernel-level routing backend (or dae-bin / dae-git)'
     'wireguard-tools: Required to manage WireGuard interfaces when using the dae backend'
     'vopono: Strict mode network namespace isolation (or vopono-bin / vopono-git)'
 )

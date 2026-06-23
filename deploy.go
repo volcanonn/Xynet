@@ -22,6 +22,7 @@ var (
 	singboxMu       sync.Mutex
 	intentionalStop bool
 
+	daeCmd          *exec.Cmd
 	daeLogCmd       *exec.Cmd
 	daeLogMu        sync.Mutex
 
@@ -96,12 +97,9 @@ func (a *App) GetBackendStatus() BackendStatus {
 		return BackendStatus{Backend: backend, Running: running, Status: status}
 	}
 
-	// dae uses systemd
-	running := false
-	out, err := exec.Command("systemctl", "is-active", "dae").Output()
-	if err == nil && strings.TrimSpace(string(out)) == "active" {
-		running = true
-	}
+	daeLogMu.Lock()
+	running := daeCmd != nil && daeCmd.Process != nil
+	daeLogMu.Unlock()
 
 	status := "offline"
 	if running {
@@ -435,9 +433,24 @@ func (a *App) WriteSingboxConfig(config string) error {
 }
 
 // deployDae generates a dae config and manages WireGuard interfaces
+func (a *App) getDaePath() string {
+	configDir, err := os.UserConfigDir()
+	if err == nil {
+		localDae := filepath.Join(configDir, "xynet", "bin", "dae")
+		if _, err := os.Stat(localDae); err == nil {
+			return localDae
+		}
+	}
+	if path, err := exec.LookPath("dae"); err == nil {
+		return path
+	}
+	return ""
+}
+
 func (a *App) deployDae(rules []RoutingRule, state AppState) error {
-	if _, err := exec.LookPath("dae"); err != nil {
-		return fmt.Errorf("dae not found in PATH — install it first (https://github.com/daeuniverse/dae)")
+	daePath := a.getDaePath()
+	if daePath == "" {
+		return fmt.Errorf("dae backend is not installed. Please install it from Settings")
 	}
 
 	proxyMap := buildProxyMap(state.Proxies)
@@ -516,34 +529,47 @@ func (a *App) deployDae(rules []RoutingRule, state AppState) error {
 		return fmt.Errorf("write dae config: %w", err)
 	}
 
-	daeCmds = append(daeCmds,
-		"mkdir -p /etc/dae",
-		fmt.Sprintf("cp %q /etc/dae/config.dae", daeConfigPath),
-		"systemctl reload-or-restart dae",
-	)
-
 	if len(daeCmds) > 0 {
 		cmd := exec.Command("pkexec", "sh", "-c", strings.Join(daeCmds, " && "))
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("dae deploy commands failed: %s (%w)", string(out), err)
+			return fmt.Errorf("dae interface setup failed: %s (%w)", string(out), err)
 		}
 	}
 
 	daeLogMu.Lock()
-	if daeLogCmd != nil && daeLogCmd.Process != nil {
-		daeLogCmd.Process.Kill()
+	if daeCmd != nil && daeCmd.Process != nil {
+		daeCmd.Process.Kill()
 	}
-	daeLogCmd = exec.Command("journalctl", "-u", "dae", "-f", "-n", "0")
-	stdout, _ := daeLogCmd.StdoutPipe()
-	if err := daeLogCmd.Start(); err == nil {
-		go func() {
-			scanner := bufio.NewScanner(stdout)
-			for scanner.Scan() {
-				a.EmitLog("dae", scanner.Text())
-			}
-			daeLogCmd.Wait()
-		}()
+	
+	daeCmd = exec.Command("pkexec", daePath, "run", "-c", daeConfigPath)
+	stdout, _ := daeCmd.StdoutPipe()
+	stderr, _ := daeCmd.StderrPipe()
+	
+	if err := daeCmd.Start(); err != nil {
+		daeLogMu.Unlock()
+		return fmt.Errorf("failed to start dae: %w", err)
 	}
+	
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			a.EmitLog("dae", scanner.Text())
+		}
+	}()
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			a.EmitLog("dae", scanner.Text())
+		}
+	}()
+	
+	go func() {
+		daeCmd.Wait()
+		daeLogMu.Lock()
+		daeCmd = nil
+		daeLogMu.Unlock()
+	}()
+	
 	daeLogMu.Unlock()
 
 	return nil
@@ -551,9 +577,9 @@ func (a *App) deployDae(rules []RoutingRule, state AppState) error {
 
 func (a *App) stopDae() error {
 	daeLogMu.Lock()
-	if daeLogCmd != nil && daeLogCmd.Process != nil {
-		daeLogCmd.Process.Kill()
-		daeLogCmd = nil
+	if daeCmd != nil && daeCmd.Process != nil {
+		daeCmd.Process.Kill()
+		daeCmd = nil
 	}
 	daeLogMu.Unlock()
 
@@ -563,7 +589,6 @@ func (a *App) stopDae() error {
 	}
 
 	var cmds []string
-	cmds = append(cmds, "systemctl stop dae || true")
 
 	wgDir := filepath.Join(configDir, "xynet", "wg-configs")
 	if entries, err := os.ReadDir(wgDir); err == nil {

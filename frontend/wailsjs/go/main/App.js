@@ -26,6 +26,10 @@ export function ImportProxyConfigs() {
   return window['go']['main']['App']['ImportProxyConfigs']();
 }
 
+export function InstallDae() {
+  return window['go']['main']['App']['InstallDae']();
+}
+
 export function KillVopono(arg1) {
   return window['go']['main']['App']['KillVopono'](arg1);
 }

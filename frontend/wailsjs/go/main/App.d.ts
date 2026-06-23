@@ -14,6 +14,8 @@ export function GetServiceStatus():Promise<main.ServiceStatus>;
 
 export function ImportProxyConfigs():Promise<Array<main.ImportedProxy>>;
 
+export function InstallDae():Promise<void>;
+
 export function KillVopono(arg1:string):Promise<void>;
 
 export function LaunchStrict(arg1:string,arg2:string):Promise<main.VoponoProcess>;

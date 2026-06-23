@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -9,6 +8,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"gopkg.in/ini.v1"
 )
 
 type DesktopApp struct {
@@ -86,59 +87,27 @@ var knownWrappers = map[string]bool{
 }
 
 func parseDesktopFile(path string) (*DesktopApp, error) {
-	f, err := os.Open(path)
+	cfg, err := ini.LoadSources(ini.LoadOptions{
+		AllowBooleanKeys:    true,
+		InsensitiveKeys:     false,
+		InsensitiveSections: false,
+		IgnoreInlineComment: true,
+	}, path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 
-	var name, execLine, icon, appType string
-	noDisplay := false
-	hidden := false
-	inDesktopEntry := false
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		if line == "[Desktop Entry]" {
-			inDesktopEntry = true
-			continue
-		}
-		if strings.HasPrefix(line, "[") {
-			if inDesktopEntry {
-				break
-			}
-			continue
-		}
-		if !inDesktopEntry {
-			continue
-		}
-
-		key, val, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		val = strings.TrimSpace(val)
-
-		switch key {
-		case "Name":
-			if name == "" {
-				name = val
-			}
-		case "Exec":
-			execLine = val
-		case "Icon":
-			icon = val
-		case "Type":
-			appType = val
-		case "NoDisplay":
-			noDisplay = strings.EqualFold(val, "true")
-		case "Hidden":
-			hidden = strings.EqualFold(val, "true")
-		}
+	sec, err := cfg.GetSection("Desktop Entry")
+	if err != nil {
+		return nil, nil // No valid desktop entry
 	}
+
+	appType := sec.Key("Type").String()
+	noDisplay, _ := sec.Key("NoDisplay").Bool()
+	hidden, _ := sec.Key("Hidden").Bool()
+	execLine := sec.Key("Exec").String()
+	name := sec.Key("Name").String()
+	icon := sec.Key("Icon").String()
 
 	if appType != "Application" || noDisplay || hidden || execLine == "" || name == "" {
 		return nil, nil

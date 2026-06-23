@@ -1,9 +1,25 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue';
 import { useAppState } from '../../composables/useAppState';
-import { GetInterfaces } from '../../../wailsjs/go/main/App';
+import { GetInterfaces, InstallDae } from '../../../wailsjs/go/main/App';
+import { useToast } from '../../composables/useToast';
 
 const { appState, saveState } = useAppState();
+const toast = useToast();
+const isInstalling = ref(false);
+
+const installDae = async () => {
+    isInstalling.value = true;
+    toast.info("Downloading dae from GitHub...");
+    try {
+        await InstallDae();
+        toast.success("Successfully installed dae!");
+    } catch (e) {
+        toast.error(`Install failed: ${e}`);
+    } finally {
+        isInstalling.value = false;
+    }
+};
 
 const backend = computed({
     get: () => appState.value?.settings?.backend || 'singbox',
@@ -118,6 +134,14 @@ const themes = [
               <span class="card-tag" :class="b.value">{{ b.tag }}</span>
             </div>
             <p class="card-desc">{{ b.description }}</p>
+            <button 
+              v-if="b.value === 'dae'" 
+              @click.stop="installDae" 
+              class="install-btn" 
+              :disabled="isInstalling"
+            >
+              {{ isInstalling ? 'Installing...' : 'Download dae (GitHub)' }}
+            </button>
           </div>
         </label>
       </div>
@@ -252,5 +276,27 @@ h3 {
   color: var(--text-secondary);
   line-height: 1.5;
   margin: 0;
+  margin-bottom: 0.5rem;
+}
+
+.install-btn {
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 0.5rem;
+}
+
+.install-btn:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.install-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
