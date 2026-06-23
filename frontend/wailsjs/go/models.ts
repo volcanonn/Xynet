@@ -3,6 +3,7 @@ export namespace main {
 	export class AppSettings {
 	    defaultInterface: string;
 	    theme: string;
+	    backend: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppSettings(source);
@@ -12,6 +13,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.defaultInterface = source["defaultInterface"];
 	        this.theme = source["theme"];
+	        this.backend = source["backend"];
 	    }
 	}
 	export class ImportedProxy {
@@ -62,6 +64,22 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class BackendStatus {
+	    backend: string;
+	    running: boolean;
+	    status: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BackendStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.backend = source["backend"];
+	        this.running = source["running"];
+	        this.status = source["status"];
+	    }
+	}
 	export class DesktopApp {
 	    name: string;
 	    exec: string;
@@ -81,8 +99,27 @@ export namespace main {
 	    }
 	}
 	
+	export class RoutingRule {
+	    processName: string;
+	    tunnelId: string;
+	    tunnelLabel: string;
+	    tunnelType: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RoutingRule(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.processName = source["processName"];
+	        this.tunnelId = source["tunnelId"];
+	        this.tunnelLabel = source["tunnelLabel"];
+	        this.tunnelType = source["tunnelType"];
+	    }
+	}
 	export class ServiceStatus {
-	    singboxRunning: boolean;
+	    backendRunning: boolean;
+	    backendName: string;
 	    voponoCount: number;
 	
 	    static createFrom(source: any = {}) {
@@ -91,7 +128,8 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.singboxRunning = source["singboxRunning"];
+	        this.backendRunning = source["backendRunning"];
+	        this.backendName = source["backendName"];
 	        this.voponoCount = source["voponoCount"];
 	    }
 	}

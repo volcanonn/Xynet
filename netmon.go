@@ -1,13 +1,9 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
+	psnet "github.com/shirou/gopsutil/v4/net"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -19,13 +15,20 @@ type NetStats struct {
 func (a *App) startNetMonitor() {
 	go func() {
 		var prevRx, prevTx uint64
+		var prevIface string
 		first := true
 
 		for {
-			iface := a.detectInterface()
-			rx, tx := readInterfaceStats(iface)
+			iface, rx, tx := getNetCounters()
 
 			if !first && a.ctx != nil {
+				if iface != prevIface || rx < prevRx || tx < prevTx {
+					prevRx = rx
+					prevTx = tx
+					prevIface = iface
+					time.Sleep(1 * time.Second)
+					continue
+				}
 				stats := NetStats{
 					Upload:   float64(tx - prevTx),
 					Download: float64(rx - prevRx),
@@ -35,61 +38,32 @@ func (a *App) startNetMonitor() {
 
 			prevRx = rx
 			prevTx = tx
+			prevIface = iface
 			first = false
 			time.Sleep(1 * time.Second)
 		}
 	}()
 }
 
-func (a *App) detectInterface() string {
-	f, err := os.Open("/proc/net/dev")
+func getNetCounters() (iface string, rx, tx uint64) {
+	counters, err := psnet.IOCounters(true)
 	if err != nil {
-		return "lo"
+		return "lo", 0, 0
 	}
-	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.Contains(line, "|") {
+	for _, c := range counters {
+		if c.Name == "lo" {
 			continue
 		}
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		name := strings.TrimSpace(parts[0])
-		if name != "lo" {
-			return name
+		if c.BytesRecv > 0 || c.BytesSent > 0 {
+			return c.Name, c.BytesRecv, c.BytesSent
 		}
 	}
-	return "lo"
-}
 
-func readInterfaceStats(iface string) (rx, tx uint64) {
-	f, err := os.Open("/proc/net/dev")
-	if err != nil {
-		return 0, 0
+	// Fallback to aggregate if no single active interface found
+	agg, err := psnet.IOCounters(false)
+	if err != nil || len(agg) == 0 {
+		return "lo", 0, 0
 	}
-	defer f.Close()
-
-	prefix := fmt.Sprintf("%s:", iface)
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if !strings.HasPrefix(line, prefix) {
-			continue
-		}
-
-		data := strings.TrimSpace(strings.TrimPrefix(line, prefix))
-		fields := strings.Fields(data)
-		if len(fields) < 10 {
-			return 0, 0
-		}
-
-		rx, _ = strconv.ParseUint(fields[0], 10, 64)
-		tx, _ = strconv.ParseUint(fields[8], 10, 64)
-		return rx, tx
-	}
-	return 0, 0
+	return "all", agg[0].BytesRecv, agg[0].BytesSent
 }

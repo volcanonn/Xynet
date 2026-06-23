@@ -17,6 +17,7 @@ type AppState struct {
 type AppSettings struct {
 	DefaultInterface string `json:"defaultInterface"`
 	Theme            string `json:"theme"`
+	Backend          string `json:"backend"` // "singbox" (default) or "dae"
 }
 
 func getConfigPath() (string, error) {
@@ -33,6 +34,9 @@ func getConfigPath() (string, error) {
 
 // LoadState loads the application state from disk
 func (a *App) LoadState() (AppState, error) {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
 	path, err := getConfigPath()
 	if err != nil {
 		return AppState{}, err
@@ -41,7 +45,6 @@ func (a *App) LoadState() (AppState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Return default state if file doesn't exist
 			return AppState{
 				CanvasElements: []interface{}{},
 				Proxies:        []ImportedProxy{},
@@ -58,8 +61,11 @@ func (a *App) LoadState() (AppState, error) {
 	return state, nil
 }
 
-// SaveState saves the application state to disk
+// SaveState saves the application state to disk using atomic write
 func (a *App) SaveState(state AppState) error {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
 	path, err := getConfigPath()
 	if err != nil {
 		return err
@@ -70,5 +76,10 @@ func (a *App) SaveState(state AppState) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpPath, path)
 }

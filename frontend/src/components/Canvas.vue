@@ -721,7 +721,7 @@ const dragPath = () => {
                     :z-index="1"
                     :target-position="Position.Left"
                     :source-position="Position.Right"
-                    :data="{ ...dragPreview.data, mode: 'Standard' }"
+                    :data="dragPreview.data"
                 />
                 <TunnelNode
                     v-if="dragPreview.type === 'tunnel'"

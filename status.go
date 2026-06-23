@@ -9,15 +9,27 @@ import (
 )
 
 type ServiceStatus struct {
-	SingboxRunning bool `json:"singboxRunning"`
-	VoponoCount    int  `json:"voponoCount"`
+	BackendRunning bool   `json:"backendRunning"`
+	BackendName    string `json:"backendName"`
+	VoponoCount    int    `json:"voponoCount"`
 }
 
 func (a *App) GetServiceStatus() ServiceStatus {
-	singboxRunning := false
-	out, err := exec.Command("systemctl", "is-active", "sing-box").Output()
+	state, _ := a.LoadState()
+	backend := state.Settings.Backend
+	if backend == "" {
+		backend = "singbox"
+	}
+
+	serviceName := "sing-box"
+	if backend == "dae" {
+		serviceName = "dae"
+	}
+
+	backendRunning := false
+	out, err := exec.Command("systemctl", "is-active", serviceName).Output()
 	if err == nil && strings.TrimSpace(string(out)) == "active" {
-		singboxRunning = true
+		backendRunning = true
 	}
 
 	a.voponoMu.Lock()
@@ -25,7 +37,8 @@ func (a *App) GetServiceStatus() ServiceStatus {
 	a.voponoMu.Unlock()
 
 	return ServiceStatus{
-		SingboxRunning: singboxRunning,
+		BackendRunning: backendRunning,
+		BackendName:    backend,
 		VoponoCount:    voponoCount,
 	}
 }
@@ -37,7 +50,7 @@ func (a *App) startStatusMonitor() {
 				status := a.GetServiceStatus()
 				runtime.EventsEmit(a.ctx, "service-status", status)
 			}
-			time.Sleep(3 * time.Second)
+			time.Sleep(10 * time.Second)
 		}
 	}()
 }

@@ -2,19 +2,23 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { Activity } from '@lucide/vue';
 import { useAppState } from '../composables/useAppState';
-import { generateSingboxConfig } from '../composables/singboxGenerator';
-import { WriteSingboxConfig, RestartSingbox } from '../../wailsjs/go/main/App';
+import { generateRoutingRules } from '../composables/routeGenerator';
+import { Deploy, GetBackendStatus, ListVoponoProcesses } from '../../wailsjs/go/main/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 
 const { appState } = useAppState();
 
 const upload = ref(0);
 const download = ref(0);
-const singboxRunning = ref(false);
+const backendRunning = ref(false);
+const backendName = ref('singbox');
 const voponoCount = ref(0);
+const deploying = ref(false);
 
 let cleanupNetStats: (() => void) | null = null;
-let cleanupServiceStatus: (() => void) | null = null;
+let cleanupVoponoStart: (() => void) | null = null;
+let cleanupVoponoEnd: (() => void) | null = null;
+let statusPoll: ReturnType<typeof setInterval> | null = null;
 
 const formatSpeed = (bytesPerSec: number): string => {
     if (bytesPerSec >= 1_073_741_824) return (bytesPerSec / 1_073_741_824).toFixed(1) + ' GB/s';
@@ -23,33 +27,65 @@ const formatSpeed = (bytesPerSec: number): string => {
     return bytesPerSec.toFixed(0) + ' B/s';
 };
 
+const backendDisplayName = (name: string): string => {
+    if (name === 'dae') return 'dae';
+    return 'sing-box';
+};
+
+const checkStatus = async () => {
+    try {
+        const status = await GetBackendStatus();
+        backendRunning.value = status.running;
+        backendName.value = status.backend;
+    } catch {
+        backendRunning.value = false;
+    }
+};
+
+const refreshVoponoCount = async () => {
+    try {
+        const procs = await ListVoponoProcesses();
+        voponoCount.value = procs?.length || 0;
+    } catch {
+        voponoCount.value = 0;
+    }
+};
+
 onMounted(() => {
     cleanupNetStats = EventsOn('net-stats', (stats: any) => {
         upload.value = stats.upload;
         download.value = stats.download;
     });
-    cleanupServiceStatus = EventsOn('service-status', (status: any) => {
-        singboxRunning.value = status.singboxRunning;
-        voponoCount.value = status.voponoCount;
-    });
+    cleanupVoponoStart = EventsOn('vopono-process-started', () => refreshVoponoCount());
+    cleanupVoponoEnd = EventsOn('vopono-process-ended', () => refreshVoponoCount());
+
+    checkStatus();
+    refreshVoponoCount();
+    statusPoll = setInterval(() => {
+        checkStatus();
+        refreshVoponoCount();
+    }, 10000);
 });
 
 onUnmounted(() => {
     cleanupNetStats?.();
-    cleanupServiceStatus?.();
+    cleanupVoponoStart?.();
+    cleanupVoponoEnd?.();
+    if (statusPoll) clearInterval(statusPoll);
 });
 
 const deployConfig = async () => {
     if (!appState.value) return;
+    deploying.value = true;
     try {
-        const configJson = generateSingboxConfig(appState.value);
-        console.log("Deploying config:", configJson);
-        await WriteSingboxConfig(configJson);
-        await RestartSingbox();
-        alert("Deployed & restarted Sing-box successfully.");
+        const rules = generateRoutingRules(appState.value);
+        await Deploy(rules);
+        await checkStatus();
     } catch (e) {
         console.error("Failed to deploy:", e);
         alert(`Failed to deploy: ${e}`);
+    } finally {
+        deploying.value = false;
     }
 };
 </script>
@@ -68,20 +104,20 @@ const deployConfig = async () => {
     </div>
 
     <div class="actions">
-      <button class="deploy-btn" @click="deployConfig">
+      <button class="deploy-btn" @click="deployConfig" :disabled="deploying">
         <Activity class="icon" :size="16" />
-        Deploy Routes
+        {{ deploying ? 'Deploying...' : 'Deploy' }}
       </button>
     </div>
 
     <div class="status-indicators">
-      <div class="status-pill" :class="{ active: singboxRunning }">
+      <div class="status-pill" :class="{ active: backendRunning }">
         <div class="status-dot"></div>
-        <span>Sing-box: {{ singboxRunning ? 'Active' : 'Inactive' }}</span>
+        <span>{{ backendDisplayName(backendName) }}: {{ backendRunning ? 'Active' : 'Offline' }}</span>
       </div>
-      <div class="status-pill" :class="{ active: voponoCount > 0 }">
+      <div v-if="voponoCount > 0" class="status-pill active">
         <div class="status-dot"></div>
-        <span>Vopono: {{ voponoCount > 0 ? voponoCount + ' Running' : 'Ready' }}</span>
+        <span>Strict: {{ voponoCount }}</span>
       </div>
     </div>
   </header>
@@ -145,9 +181,14 @@ const deployConfig = async () => {
   filter: brightness(1.2);
 }
 
+.deploy-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .status-indicators {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .status-pill {

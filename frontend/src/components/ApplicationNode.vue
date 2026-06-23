@@ -1,29 +1,19 @@
 <script setup lang="ts">
 import { Handle, Position, useVueFlow } from "@vue-flow/core";
 import type { NodeProps } from "@vue-flow/core";
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { Play } from "@lucide/vue";
+import { useAppState } from "../composables/useAppState";
+import { LaunchStrict } from "../../wailsjs/go/main/App";
 
 interface AppNodeData {
     label: string;
     icon?: string;
-    mode: "Standard" | "Strict";
+    processName?: string;
+    mode?: "Standard" | "Strict";
 }
 const props = defineProps<NodeProps<AppNodeData>>();
 
-const toggleMode = () => {
-    const nextMode = props.data.mode === "Standard" ? "Strict" : "Standard";
-    if (
-        window.confirm(
-            `Are you sure you want to switch ${props.data.label} to ${nextMode} mode?`,
-        )
-    ) {
-        updateNodeData(props.id, { mode: nextMode });
-    }
-};
-
-// Only call useVueFlow if we are actually rendered inside a VueFlow instance.
-// The drag preview node renders this component *outside* of the Flow context,
-// so we use optional chaining/fallback defaults.
 let vueFlow: any = null;
 try {
     vueFlow = useVueFlow();
@@ -32,32 +22,56 @@ try {
 }
 
 const getConnectedEdges = vueFlow?.getConnectedEdges || (() => []);
-const updateNodeData = vueFlow?.updateNodeData || (() => {});
 const findNode = vueFlow?.findNode || (() => null);
+const updateNodeData = vueFlow?.updateNodeData;
 const hasConnection = computed(() => getConnectedEdges(props.id).length > 0);
 const isInFlow = computed(() => !!findNode(props.id));
 
-import { ExecVopono } from "../../wailsjs/go/main/App";
+const mode = computed(() => props.data.mode || "Standard");
+const launching = ref(false);
 
-const launchStrictApp = async () => {
+const connectedTunnel = computed(() => {
     const edges = getConnectedEdges(props.id);
-    if (edges.length === 0) return;
-    const targetNode = findNode(edges[0].target);
-    if (!targetNode) return;
+    if (edges.length === 0) return null;
+    const edge = edges[0];
+    const targetId = edge.source === props.id ? edge.target : edge.source;
+    return findNode(targetId);
+});
 
+const canLaunch = computed(() => {
+    if (mode.value !== "Strict") return false;
+    const tunnel = connectedTunnel.value;
+    if (!tunnel) return false;
+    return tunnel.data?.type === "WireGuard";
+});
+
+const toggleMode = () => {
+    if (!updateNodeData) return;
+    const newMode = mode.value === "Standard" ? "Strict" : "Standard";
+    if (newMode === "Strict") {
+        if (!confirm("Switch to Strict mode?\n\nStrict mode launches the app inside a network namespace for complete isolation. You must use the Launch button to start it.")) return;
+    }
+    updateNodeData(props.id, { ...props.data, mode: newMode });
+};
+
+const launchApp = async () => {
+    const tunnel = connectedTunnel.value;
+    if (!tunnel || !props.data.processName) return;
+
+    launching.value = true;
     try {
-        await ExecVopono(props.data.label.toLowerCase(), targetNode.data.label);
-        // We could show a toast here
-        console.log("Launched vopono for", props.data.label);
+        await LaunchStrict(props.data.processName, tunnel.data.label);
     } catch (e) {
-        console.error("Failed to launch strict app:", e);
+        console.error("Failed to launch:", e);
         alert(`Failed to launch: ${e}`);
+    } finally {
+        launching.value = false;
     }
 };
 </script>
 
 <template>
-    <div class="app-node">
+    <div class="app-node" :class="{ 'strict-mode': mode === 'Strict' }">
         <div class="node-content">
             <div class="icon-container">
                 <img v-if="data.icon" :src="data.icon" class="icon-img" />
@@ -65,24 +79,25 @@ const launchStrictApp = async () => {
             </div>
             <div class="info">
                 <span class="label">{{ data.label }}</span>
-                <div class="mode-actions">
-                    <span
-                        class="mode-badge"
-                        :class="data.mode.toLowerCase()"
-                        @click="toggleMode"
-                        title="Click to toggle mode"
-                        >{{ data.mode }}</span
-                    >
-                    <button
-                        v-if="data.mode === 'Strict' && hasConnection"
-                        class="launch-btn"
-                        @click.stop="launchStrictApp"
-                        title="Launch App in Strict Mode"
-                    >
-                        Launch
-                    </button>
-                </div>
+                <button
+                    v-if="isInFlow"
+                    class="mode-badge"
+                    :class="mode.toLowerCase()"
+                    @click.stop="toggleMode"
+                    :title="mode === 'Standard' ? 'Auto-routed via backend' : 'Launches inside network namespace'"
+                >
+                    {{ mode }}
+                </button>
             </div>
+            <button
+                v-if="isInFlow && canLaunch"
+                class="launch-btn"
+                @click.stop="launchApp"
+                :disabled="launching"
+                title="Launch inside network namespace"
+            >
+                <Play :size="14" />
+            </button>
         </div>
 
         <Handle
@@ -113,6 +128,9 @@ const launchStrictApp = async () => {
 }
 .app-node:hover {
     border-color: #52525b;
+}
+.app-node.strict-mode {
+    border-color: #a855f7;
 }
 .vue-flow__node-application.selected .app-node {
     border-color: var(--accent-primary);
@@ -151,8 +169,9 @@ const launchStrictApp = async () => {
 .info {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: 0.25rem;
     overflow: hidden;
+    flex: 1;
 }
 .label {
     font-size: 0.875rem;
@@ -162,45 +181,52 @@ const launchStrictApp = async () => {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.mode-actions {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-}
-.launch-btn {
-    font-size: 0.65rem;
-    font-weight: 600;
-    padding: 0.125rem 0.375rem;
-    border-radius: 0.25rem;
-    border: none;
-    background-color: var(--accent-primary);
-    color: white;
-    cursor: pointer;
-    transition: filter 0.2s;
-}
-.launch-btn:hover {
-    filter: brightness(1.2);
-}
 .mode-badge {
-    font-size: 0.65rem;
-    font-weight: 600;
-    padding: 0.125rem 0.375rem;
-    border-radius: 0.25rem;
     display: inline-block;
     width: fit-content;
+    padding: 0.125rem 0.375rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    font-family: inherit;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-radius: 0.25rem;
+    border: none;
     cursor: pointer;
     transition: filter 0.2s;
 }
 .mode-badge:hover {
-    filter: brightness(1.2);
+    filter: brightness(1.3);
 }
 .mode-badge.standard {
-    background-color: rgba(59, 130, 246, 0.2);
-    color: #60a5fa;
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
 }
 .mode-badge.strict {
-    background-color: rgba(239, 68, 68, 0.2);
-    color: #f87171;
+    background-color: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
+}
+
+.launch-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 0.375rem;
+    border: 1px solid #a855f7;
+    background: rgba(168, 85, 247, 0.1);
+    color: #a855f7;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s;
+}
+.launch-btn:hover {
+    background: rgba(168, 85, 247, 0.25);
+}
+.launch-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .handle {

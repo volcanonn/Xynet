@@ -1,105 +1,85 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { computed } from 'vue';
 import { Globe, X, Edit2, ChevronDown, ChevronRight, Check } from '@lucide/vue';
 import { ImportWireguardConfig } from '../../../wailsjs/go/main/App';
+import { useAppState } from '../../composables/useAppState';
+
+const { appState, saveState } = useAppState();
 
 interface ProxyConfig {
-  id: number;
   name: string;
   country: string;
   city: string;
   content: string;
 }
 
-const configs = ref<ProxyConfig[]>([]);
-let nextId = 1;
+const expandedCountries = computed(() => new Set(
+  configs.value.map(c => c.country)
+));
+const expandedCitiesSet = computed(() => new Set(
+  configs.value.map(c => `${c.country}:${c.city}`)
+));
 
-const expandedCountries = ref<Set<string>>(new Set(['Imported']));
-const expandedCities = ref<Set<string>>(new Set(['Imported:Unknown']));
+const editingName = computed({
+  get: () => '',
+  set: () => {},
+});
+let editingIdx: number | null = null;
+let editNameVal = '';
 
-const editingId = ref<number | null>(null);
-const editName = ref('');
+const configs = computed<ProxyConfig[]>(() => {
+  if (!appState.value?.proxies) return [];
+  return appState.value.proxies.map(p => {
+    let country = 'Imported';
+    let city = 'Unknown';
+    const parts = p.name.replace(/\.conf$/, '').split(/[-_]/);
+    if (parts.length >= 2 && parts[0].length <= 3) {
+      country = parts[0].toUpperCase();
+      city = parts[1].toUpperCase();
+    }
+    return { name: p.name, country, city, content: p.content };
+  });
+});
 
-const toggleCountry = (country: string) => {
-  if (expandedCountries.value.has(country)) {
-    expandedCountries.value.delete(country);
-  } else {
-    expandedCountries.value.add(country);
+const groupedConfigs = computed(() => {
+  const groups: Record<string, Record<string, ProxyConfig[]>> = {};
+  for (const config of configs.value) {
+    if (!groups[config.country]) groups[config.country] = {};
+    if (!groups[config.country][config.city]) groups[config.country][config.city] = [];
+    groups[config.country][config.city].push(config);
   }
-};
-
-const toggleCity = (country: string, city: string) => {
-  const key = `${country}:${city}`;
-  if (expandedCities.value.has(key)) {
-    expandedCities.value.delete(key);
-  } else {
-    expandedCities.value.add(key);
-  }
-};
-
-const startEdit = (config: ProxyConfig) => {
-  editingId.value = config.id;
-  editName.value = config.name;
-};
-
-const saveEdit = (config: ProxyConfig) => {
-  if (editName.value.trim()) {
-    config.name = editName.value.trim();
-  }
-  editingId.value = null;
-};
-
-const removeConfig = (id: number) => {
-  const index = configs.value.findIndex(c => c.id === id);
-  if (index !== -1) {
-    configs.value.splice(index, 1);
-  }
-};
+  return groups;
+});
 
 const importConfig = async () => {
   try {
     const imported = await ImportWireguardConfig();
     if (imported && imported.name) {
-      let country = 'Imported';
-      let city = 'Unknown';
+      if (!appState.value) return;
+      if (!appState.value.proxies) appState.value.proxies = [];
 
-      // Very naive parsing: if name is something like "se-sto-wg01.conf", try to split
-      const parts = imported.name.replace(/\.conf$/, '').split(/[-_]/);
-      if (parts.length >= 2 && parts[0].length <= 3) {
-        country = parts[0].toUpperCase();
-        city = parts[1].toUpperCase();
+      const exists = appState.value.proxies.some(p => p.name === imported.name);
+      if (exists) {
+        const idx = appState.value.proxies.findIndex(p => p.name === imported.name);
+        appState.value.proxies[idx] = { name: imported.name, content: imported.content };
+      } else {
+        appState.value.proxies.push({ name: imported.name, content: imported.content });
       }
-
-      const newConfig: ProxyConfig = {
-        id: nextId++,
-        name: imported.name,
-        country,
-        city,
-        content: imported.content
-      };
-      
-      configs.value.push(newConfig);
-      expandedCountries.value.add(country);
-      expandedCities.value.add(`${country}:${city}`);
+      saveState();
     }
   } catch (e) {
     console.error("Failed to import config", e);
   }
 };
 
-const groupedConfigs = computed(() => {
-  const groups: Record<string, Record<string, ProxyConfig[]>> = {};
-  for (const config of configs.value) {
-    if (!groups[config.country]) {
-      groups[config.country] = {};
-    }
-    if (!groups[config.country][config.city]) {
-      groups[config.country][config.city] = [];
-    }
-    groups[config.country][config.city].push(config);
+const removeConfig = (name: string) => {
+  if (!appState.value?.proxies) return;
+  const idx = appState.value.proxies.findIndex(p => p.name === name);
+  if (idx !== -1) {
+    appState.value.proxies.splice(idx, 1);
+    saveState();
   }
-  return groups;
-});
+};
 </script>
 
 <template>
@@ -113,43 +93,26 @@ const groupedConfigs = computed(() => {
 
     <div v-if="configs.length > 0" class="proxy-list-container">
       <div v-for="(cities, country) in groupedConfigs" :key="country" class="country-group">
-        <div class="group-header" @click="toggleCountry(country)">
-          <component :is="expandedCountries.has(country) ? ChevronDown : ChevronRight" :size="18" />
+        <div class="group-header">
+          <ChevronDown :size="18" />
           <span class="group-title">{{ country }}</span>
           <span class="badge">{{ Object.values(cities).flat().length }}</span>
         </div>
-        
-        <div v-if="expandedCountries.has(country)" class="cities-container">
+
+        <div class="cities-container">
           <div v-for="(serverList, city) in cities" :key="city" class="city-group">
-            <div class="group-header city-header" @click="toggleCity(country, city)">
-              <component :is="expandedCities.has(`${country}:${city}`) ? ChevronDown : ChevronRight" :size="16" />
+            <div class="group-header city-header">
+              <ChevronDown :size="16" />
               <span class="group-title">{{ city }}</span>
               <span class="badge">{{ serverList.length }}</span>
             </div>
-            
-            <div v-if="expandedCities.has(`${country}:${city}`)" class="servers-container">
-              <div v-for="server in serverList" :key="server.id" class="server-item">
+
+            <div class="servers-container">
+              <div v-for="server in serverList" :key="server.name" class="server-item">
                 <div class="server-info">
-                  <template v-if="editingId === server.id">
-                    <input 
-                      v-model="editName" 
-                      @keyup.enter="saveEdit(server)"
-                      @blur="saveEdit(server)"
-                      class="edit-input"
-                      autoFocus
-                    />
-                    <button class="icon-btn success" @click.stop="saveEdit(server)">
-                      <Check :size="14" />
-                    </button>
-                  </template>
-                  <template v-else>
-                    <span class="server-name">{{ server.name }}</span>
-                    <button class="icon-btn edit-btn" @click.stop="startEdit(server)" title="Rename">
-                      <Edit2 :size="14" />
-                    </button>
-                  </template>
+                  <span class="server-name">{{ server.name }}</span>
                 </div>
-                <button class="icon-btn delete-btn" @click.stop="removeConfig(server.id)" title="Remove">
+                <button class="icon-btn delete-btn" @click.stop="removeConfig(server.name)" title="Remove">
                   <X :size="16" />
                 </button>
               </div>
@@ -157,6 +120,10 @@ const groupedConfigs = computed(() => {
           </div>
         </div>
       </div>
+    </div>
+
+    <div v-else class="empty-state">
+      <p>No proxies imported yet. Click the button above to import a WireGuard config file.</p>
     </div>
   </div>
 </template>
@@ -293,17 +260,6 @@ h2 {
   font-size: 0.9em;
 }
 
-.edit-input {
-  background-color: rgba(0, 0, 0, 0.3);
-  border: 1px solid #3b82f6;
-  color: white;
-  border-radius: 3px;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.9em;
-  outline: none;
-  width: 200px;
-}
-
 .icon-btn {
   background: none;
   border: none;
@@ -322,21 +278,14 @@ h2 {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
-.edit-btn:hover {
-  color: #3b82f6;
-}
-
 .delete-btn:hover {
   color: #ef4444;
 }
 
-.success {
-  opacity: 0.8;
-  color: #22c55e;
-}
-
-.success:hover {
-  opacity: 1;
-  background-color: rgba(34, 197, 94, 0.1);
+.empty-state {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  text-align: center;
+  max-width: 400px;
 }
 </style>

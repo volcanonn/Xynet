@@ -1,89 +1,158 @@
-📋 PROJECT CONTEXT: NodeNet (Visual Proxy & VPN Manager)
+# Xynet — Visual Proxy & VPN Manager
 
-1. Project Overview
+## 1. Project Overview
 
-NodeNet is a visual, node-based VPN and proxy manager built for Linux (specifically CachyOS/Arch). It replaces list-based configurations with a drag-and-drop "Blender-style" canvas. Users drag lines from Applications (Inputs) to Network Tunnels (Outputs) to effortlessly achieve advanced process-level split-tunneling.
+Xynet is a visual, node-based VPN and proxy manager. It replaces list-based configurations with a drag-and-drop "Blender-style" canvas. Users drag lines from Applications (Inputs) to Network Tunnels (Outputs) to achieve process-level split-tunneling.
 
-2. Tech Stack
+Wire Firefox to AirVPN on the canvas, click Deploy, and Firefox's traffic routes through the VPN. Direct, Block, and multiple simultaneous tunnels are all supported.
 
-Backend Framework: Wails v2 (Go). Used to bridge the OS and the UI, execute system commands, and spawn background daemon processes.
+## 2. Tech Stack
 
-Frontend UI: Vue.js 3 + TypeScript.
+**Backend Framework:** Wails v2 (Go). Bridges the OS and the UI.
 
-Node Library: Vue Flow (for the visual drag-and-drop canvas).
+**Frontend UI:** Vue.js 3 + TypeScript.
 
-Package Manager & Security: Deno (replaces Node/NPM to prevent supply chain attacks).
+**Node Library:** Vue Flow (for the visual drag-and-drop canvas).
 
-Primary Engine (Userspace): Sing-box (Universal proxy daemon for 95% of everyday apps).
+**Package Manager & Security:** Deno (replaces Node/NPM to prevent supply chain attacks).
 
-Secondary Engine (Kernel): Vopono / Network Namespaces (For strict, isolated "Paranoid Mode" routing).
+**Routing Backends (pluggable):**
+- **sing-box** (default) — Userspace TUN proxy with native WireGuard and Hysteria2 support. Cross-platform (Linux now, Windows/macOS planned).
+- **dae** (advanced, Linux-only) — eBPF TC hooks for kernel-level routing. Bypassed traffic never enters userspace.
 
-IDE: Zed (Configured with Deno and Vue.js LSPs).
+**Strict Mode Isolation:** Vopono (Linux network namespace launcher for full traffic isolation).
 
-3. The "Dual-Engine" Architecture
+**System Tray:** fyne.io/systray (pure DBus StatusNotifierItem).
 
-NodeNet does not route traffic directly. It acts as a visual JSON generator and process manager for two parallel routing engines:
+**Network Stats:** shirou/gopsutil (cross-platform interface bandwidth monitoring).
 
-The Sing-box Engine (Flexible Mode): Uses a TUN interface, FakeIP DNS, and process-sniffing to seamlessly route everyday apps (Browsers, Games).
+**IDE:** Zed (Configured with Deno and Vue.js LSPs).
 
-The Vopono Engine (Paranoid Mode): Uses Linux kernel netns (Network Namespaces) to create mathematically isolated "bubbles" with pure kernel-level WireGuard. Used for apps where IPC leaks would be disastrous (e.g., Torrenting).
+## 3. Routing Architecture
 
-Note on overlap: Sing-box is configured to bypass (ignore) encrypted WireGuard UDP packets coming out of the Vopono namespaces, preventing double-encryption.
+Xynet supports two routing modes per application:
 
-4. Key Network Features & Capabilities Supported
+### Standard Mode (default)
 
-Process-Based Split Tunneling (Sing-box): Routing specific apps to specific outbounds effortlessly.
+Traffic routing is handled by the selected backend (sing-box or dae). The backend intercepts traffic by process name and routes it through the configured tunnel.
 
-Absolute Namespace Isolation (Vopono): Using $PATH wrappers or .desktop file overrides so apps launch natively into kernel-isolated VPN bubbles with flawless Kill Switches.
+```
+User clicks Deploy
+        ↓
+Frontend: generateRoutingRules(canvasState)
+  → [{processName, tunnelId, tunnelLabel, tunnelType}, ...]
+        ↓
+Go Backend: Deploy(rules)
+  → reads settings.backend ("singbox" | "dae")
+  → reads state.proxies (imported WireGuard .conf files)
+  → parses WireGuard configs with wgparser.go
+  → generates backend-specific config
+  → writes config file + restarts backend service
+```
 
-Hysteria2 Support: Used for stealth, low-latency, DPI-bypassing connections to a Home Server (critical for Sunshine game streaming over hostile school/work Wi-Fi).
+**sing-box path:** Generates a JSON config with TUN inbound, WireGuard outbounds (parsed from imported .conf files), and process_name routing rules. Manages everything in userspace.
 
-WireGuard Support: Native support for standard VPNs (like AirVPN) in both Sing-box and Vopono.
+**dae path:** Runs `wg-quick up` for each WireGuard tunnel, sets up fwmark policy routing (`ip rule` + `ip route`), generates a dae config with `pname()` routing rules. Traffic is routed at the kernel level via eBPF.
 
-Direct / Bypass: Native support for ignoring local network traffic or apps that need naked internet (e.g., Moonlight at an unblocked coffee shop).
+### Strict Mode
 
-Port Forwarding (Inbound): Support for routing traffic coming IN from an AirVPN forwarded port directly to a local process (like localhost:47984 for Sunshine).
+For apps requiring complete network isolation (no IPC leaks), Strict mode launches the app inside a Linux network namespace using Vopono. The app is spawned inside the namespace — it cannot communicate with non-VPN'd services on the host.
 
-5. Development Environment Quirks (CRITICAL FOR LLM)
+Toggle an app to Strict mode on the canvas, then click the Launch button to start it inside the VPN namespace.
 
-OS: Arch Linux (CachyOS).
+### Routing by Tunnel Type
 
-Wails Compilation: Must ALWAYS be run with the WebKit 4.1 tag due to Arch Linux deprecating 4.0.
+| Tunnel Type | sing-box | dae |
+|---|---|---|
+| **WireGuard** | Userspace WireGuard outbound | Kernel `wg` interface via wg-quick |
+| **Hysteria2** | Native Hysteria2 outbound | Not supported (use sing-box) |
+| **Direct** | `direct` outbound | `direct` routing rule |
+| **Block** | `block` outbound | `block` routing rule |
 
-Command: wails dev -tags webkit2_41
+## 4. Key Features
 
-If wails is not found then run
+**Automatic Process Routing:** Wire an app to a tunnel on the canvas and click Deploy. The backend routes the app's traffic through the configured tunnel by process name.
 
-Command: export PATH="$PATH:$(go env GOPATH)/bin"
+**WireGuard Support:** Import standard WireGuard `.conf` files. The Go backend parses PrivateKey, PublicKey, Endpoint, Address, DNS, and AllowedIPs to generate real backend configs.
 
-Deno over NPM: Node.js/NPM is banned in this project.
+**Hysteria2 Support:** Low-latency, DPI-bypassing connections handled natively by sing-box.
 
-wails.json has been modified so frontend:Install uses deno install.
+**Block / Kill Switch:** Apps wired to the "Block" tunnel have their traffic dropped.
 
-deno.json exists in the frontend folder.
+**Direct / Bypass:** Apps wired to "Direct" use the system's default routing.
 
-Do NOT generate npm, yarn, or pnpm commands. Generate deno commands (e.g., deno add npm:@vue-flow/core).
+**Strict Mode:** Launch apps inside Vopono network namespaces for complete isolation — prevents IPC/D-Bus traffic leaks.
 
-6. The UI Layout Concept
+**Selectable Backend:** Choose between sing-box (recommended, cross-platform) and dae (high performance, Linux eBPF) in Settings.
 
-Left Column (Inputs): Draggable nodes representing Applications (e.g., Firefox, qBittorrent, Sunshine) and a "Default System" node.
+## 5. Project Structure
 
-Feature: Input nodes can be toggled as [Standard] (handled by Sing-box) or [Strict/Namespace] (handled by Vopono).
+```
+app.go                        # Wails app struct, LaunchStrict, KillVopono
+deploy.go                     # Pluggable backend deploy system (sing-box + dae)
+wgparser.go                   # WireGuard .conf file parser
+main.go                       # Wails entry point
+state.go                      # Canvas state persistence + settings (backend choice)
+desktop.go                    # Desktop app discovery (XDG .desktop files)
+netmon.go                     # Network bandwidth monitoring (gopsutil)
+status.go                     # Backend-aware service status polling
+systray.go                    # System tray (fyne.io/systray)
 
-Right Column (Outputs): Draggable nodes representing Outbound Tunnels (AirVPN, Hysteria2 Home Server, Bypass/Direct, Block/Killswitch).
+frontend/
+├── src/
+│   ├── components/
+│   │   ├── Canvas.vue          # Vue Flow canvas with drag-and-drop
+│   │   ├── ApplicationNode.vue # App nodes (Standard/Strict mode toggle + Launch)
+│   │   ├── TunnelNode.vue      # Tunnel output nodes
+│   │   ├── WireEdge.vue        # Connection wires
+│   │   ├── Header.vue          # Status bar with backend status + Deploy button
+│   │   ├── Sidebar.vue         # Navigation
+│   │   └── views/
+│   │       └── Settings.vue    # Backend selector (sing-box / dae)
+│   └── composables/
+│       ├── routeGenerator.ts   # Canvas state → routing rules
+│       └── useAppState.ts      # State management
+└── wailsjs/                    # Auto-generated Wails bindings
+```
 
-Interaction: Connecting a line between an Input and an Output writes a rule in the Sing-box JSON array OR triggers Go to execute a vopono exec wrapper script.
+## 6. The UI Layout
 
-7. Instructions for the LLM
+**Toolbar (Top):** Trash zone, Applications dropdown, Tunnels dropdown, Import Config button.
 
-When acting as my coding assistant for this project:
+**Canvas (Center):** Drag-and-drop workspace. Application nodes on the left, Tunnel nodes on the right. Connect a wire from an app to a tunnel to create a routing rule.
 
-Assume I have a working Wails/Vue/Deno setup running.
+**Header (Top):** Live upload/download speeds, backend status (sing-box/dae), Deploy button, Strict mode process count.
 
-Provide modular, clean Go code for the Wails backend (app.go) for writing JSON files, restarting Sing-box, and executing vopono CLI commands via os/exec.
+**Sidebar (Left):** Navigation between Canvas, Dashboard, Proxies, Logs, and Settings views.
 
-Provide Vue 3 <script setup lang="ts"> code using Vue Flow to render the UI.
+## 7. Development Environment
 
-If asked to generate Sing-box configurations, ensure they utilize the tun interface, fakeip for DNS, and process_name rules.
+**OS:** Arch Linux (CachyOS).
 
-Prioritize performance and security. Do not suggest adding Electron, Node.js, or heavy web dependencies unless strictly necessary.
+**Wails Compilation:** Must ALWAYS use the WebKit 4.1 tag:
+```
+wails dev -tags webkit2_41
+```
+
+If wails is not found:
+```
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+**Deno over NPM:** Node.js/NPM is banned. Use deno commands only:
+```
+deno add npm:@vue-flow/core
+```
+
+## 8. Instructions for the LLM
+
+When acting as a coding assistant for this project:
+
+- The routing backends are sing-box (default) and dae (Linux-only advanced option).
+- Config generation happens in Go (`deploy.go`), not in the frontend.
+- WireGuard configs are parsed from imported `.conf` files using `wgparser.go`.
+- Strict mode uses Vopono network namespaces — apps must be launched inside the namespace, not attached after the fact.
+- The project targets Linux now but is designed for future Windows/macOS support. sing-box is the cross-platform path; dae is Linux-only.
+- Do NOT suggest adding Electron, Node.js, or heavy web dependencies.
+- Do NOT generate npm, yarn, or pnpm commands. Use deno.
+- Assume a working Wails/Vue/Deno setup.

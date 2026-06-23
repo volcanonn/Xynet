@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -18,6 +20,7 @@ type App struct {
 	voponoMu        sync.Mutex
 	voponoProcesses map[string]*exec.Cmd
 	processInfo     map[string]VoponoProcess
+	stateMu         sync.Mutex
 }
 
 // VoponoProcess represents a tracked vopono process
@@ -36,8 +39,7 @@ func NewApp() *App {
 	}
 }
 
-// startup is called when the app starts. The context is saved
-// so we can call the runtime methods
+// startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.setupSystray(ctx)
@@ -45,34 +47,61 @@ func (a *App) startup(ctx context.Context) {
 	a.startStatusMonitor()
 }
 
-// Greet returns a greeting for the given name
-func (a *App) Greet(name string) string {
-	return fmt.Sprintf("Hello %s, It's show time!", name)
+// shutdown is called when the app is closing
+func (a *App) shutdown(ctx context.Context) {
+	a.StopSingbox()
+
+	a.voponoMu.Lock()
+	procs := make(map[string]*exec.Cmd, len(a.voponoProcesses))
+	for k, v := range a.voponoProcesses {
+		procs[k] = v
+	}
+	a.voponoMu.Unlock()
+
+	for _, cmd := range procs {
+		if cmd.Process != nil {
+			cmd.Process.Signal(syscall.SIGTERM)
+		}
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	for _, cmd := range procs {
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
+	}
 }
 
-// WriteSingboxConfig writes the given JSON string to the sing-box config file
-func (a *App) WriteSingboxConfig(config string) error {
-	path := filepath.Join(os.TempDir(), "sing-box-config.json")
-	return os.WriteFile(path, []byte(config), 0644)
-}
+// LaunchStrict launches an app inside a Vopono network namespace for strict isolation
+func (a *App) LaunchStrict(processName string, tunnelLabel string) (VoponoProcess, error) {
+	state, err := a.LoadState()
+	if err != nil {
+		return VoponoProcess{}, fmt.Errorf("load state: %w", err)
+	}
 
-// RestartSingbox restarts the sing-box daemon
-func (a *App) RestartSingbox() error {
-	cmd := exec.Command("systemctl", "restart", "sing-box")
-	return cmd.Run()
-}
+	proxyMap := buildProxyMap(state.Proxies)
+	proxy, ok := proxyMap[tunnelLabel]
+	if !ok {
+		return VoponoProcess{}, fmt.Errorf("no config found for tunnel %q", tunnelLabel)
+	}
 
-// StopSingbox stops the sing-box daemon
-func (a *App) StopSingbox() error {
-	cmd := exec.Command("systemctl", "stop", "sing-box")
-	return cmd.Run()
-}
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return VoponoProcess{}, err
+	}
+	strictDir := filepath.Join(configDir, "nodenet", "strict")
+	if err := os.MkdirAll(strictDir, 0700); err != nil {
+		return VoponoProcess{}, err
+	}
 
-// ExecVopono executes a vopono command asynchronously and tracks it
-func (a *App) ExecVopono(appName string, configName string) (VoponoProcess, error) {
-	cmd := exec.Command("vopono", "exec", configName, appName)
+	confPath := filepath.Join(strictDir, tunnelLabel+".conf")
+	if err := os.WriteFile(confPath, []byte(proxy.Content), 0600); err != nil {
+		return VoponoProcess{}, fmt.Errorf("write config: %w", err)
+	}
 
-	// Start asynchronously to prevent UI blocking
+	cmd := exec.Command("vopono", "exec", "--custom", confPath, processName)
+
 	if err := cmd.Start(); err != nil {
 		return VoponoProcess{}, fmt.Errorf("failed to start vopono: %v", err)
 	}
@@ -80,8 +109,8 @@ func (a *App) ExecVopono(appName string, configName string) (VoponoProcess, erro
 	id := uuid.New().String()
 	proc := VoponoProcess{
 		ID:         id,
-		AppName:    appName,
-		ConfigName: configName,
+		AppName:    processName,
+		ConfigName: tunnelLabel,
 		PID:        cmd.Process.Pid,
 	}
 
@@ -90,7 +119,6 @@ func (a *App) ExecVopono(appName string, configName string) (VoponoProcess, erro
 	a.processInfo[id] = proc
 	a.voponoMu.Unlock()
 
-	// Wait for process to exit in the background to clean up
 	go func(processID string) {
 		cmd.Wait()
 
@@ -111,7 +139,7 @@ func (a *App) ExecVopono(appName string, configName string) (VoponoProcess, erro
 	return proc, nil
 }
 
-// KillVopono gracefully kills a tracked vopono instance
+// KillVopono gracefully terminates a tracked vopono instance
 func (a *App) KillVopono(id string) error {
 	a.voponoMu.Lock()
 	cmd, exists := a.voponoProcesses[id]
@@ -121,10 +149,24 @@ func (a *App) KillVopono(id string) error {
 		return fmt.Errorf("process not found")
 	}
 
-	if cmd.Process != nil {
+	if cmd.Process == nil {
+		return nil
+	}
+
+	cmd.Process.Signal(syscall.SIGTERM)
+
+	done := make(chan struct{})
+	go func() {
+		cmd.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-time.After(3 * time.Second):
 		return cmd.Process.Kill()
 	}
-	return nil
 }
 
 // ListVoponoProcesses returns all currently running tracked processes
@@ -160,7 +202,6 @@ func (a *App) ImportWireguardConfig() (ImportedProxy, error) {
 		return ImportedProxy{}, err
 	}
 
-	// Read the file content
 	content, err := os.ReadFile(selection)
 	if err != nil {
 		return ImportedProxy{}, err
@@ -170,4 +211,11 @@ func (a *App) ImportWireguardConfig() (ImportedProxy, error) {
 	return ImportedProxy{Name: name, Content: string(content)}, nil
 }
 
+// RoutingRule represents a process-to-tunnel mapping
+type RoutingRule struct {
+	ProcessName string `json:"processName"`
+	TunnelID    string `json:"tunnelId"`
+	TunnelLabel string `json:"tunnelLabel"`
+	TunnelType  string `json:"tunnelType"`
+}
 

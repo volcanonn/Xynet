@@ -57,6 +57,34 @@ func (a *App) ListDesktopApps() ([]DesktopApp, error) {
 
 var fieldCodeRegex = regexp.MustCompile(`\s*%[a-zA-Z]`)
 
+var knownWrappers = map[string]bool{
+	"env":          true,
+	"optirun":      true,
+	"primusrun":    true,
+	"prime-run":    true,
+	"gamemoderun":  true,
+	"gamescope":    true,
+	"mangohud":     true,
+	"switcherooctl": true,
+	"flatpak":      true,
+	"snap":         true,
+	"firejail":     true,
+	"nice":         true,
+	"ionice":       true,
+	"schedtool":    true,
+	"taskset":      true,
+	"numactl":      true,
+	"sudo":         true,
+	"pkexec":       true,
+	"dbus-launch":  true,
+	"dbus-run-session": true,
+	"setsid":       true,
+	"nohup":        true,
+	"strace":       true,
+	"ltrace":       true,
+	"xdg-open":     true,
+}
+
 func parseDesktopFile(path string) (*DesktopApp, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -140,17 +168,21 @@ func extractProcessName(execLine string) string {
 		return ""
 	}
 
-	bin := parts[0]
-	if strings.Contains(bin, "=") {
-		for _, p := range parts[1:] {
-			if !strings.Contains(p, "=") {
-				bin = p
-				break
-			}
+	for _, p := range parts {
+		if strings.Contains(p, "=") {
+			continue
 		}
+		base := filepath.Base(p)
+		if knownWrappers[base] {
+			continue
+		}
+		if strings.HasPrefix(p, "-") {
+			continue
+		}
+		return base
 	}
 
-	return filepath.Base(bin)
+	return ""
 }
 
 func resolveIcon(icon string) string {
@@ -162,6 +194,8 @@ func resolveIcon(icon string) string {
 		return readIconAsDataURI(icon)
 	}
 
+	home, _ := os.UserHomeDir()
+
 	searchPaths := []string{
 		fmt.Sprintf("/usr/share/icons/hicolor/48x48/apps/%s.png", icon),
 		fmt.Sprintf("/usr/share/icons/hicolor/64x64/apps/%s.png", icon),
@@ -170,6 +204,16 @@ func resolveIcon(icon string) string {
 		fmt.Sprintf("/usr/share/pixmaps/%s.png", icon),
 		fmt.Sprintf("/usr/share/pixmaps/%s.svg", icon),
 		fmt.Sprintf("/usr/share/pixmaps/%s.xpm", icon),
+	}
+
+	if home != "" {
+		userPaths := []string{
+			filepath.Join(home, ".local", "share", "icons", "hicolor", "48x48", "apps", icon+".png"),
+			filepath.Join(home, ".local", "share", "icons", "hicolor", "64x64", "apps", icon+".png"),
+			filepath.Join(home, ".local", "share", "icons", "hicolor", "128x128", "apps", icon+".png"),
+			filepath.Join(home, ".local", "share", "icons", "hicolor", "scalable", "apps", icon+".svg"),
+		}
+		searchPaths = append(searchPaths, userPaths...)
 	}
 
 	for _, p := range searchPaths {

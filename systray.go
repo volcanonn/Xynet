@@ -3,9 +3,8 @@ package main
 import (
 	"context"
 	_ "embed"
-	"os"
 
-	"github.com/getlantern/systray"
+	"fyne.io/systray"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -40,7 +39,6 @@ func (a *App) setupSystray(ctx context.Context) {
 				case <-mQuit.ClickedCh:
 					systray.Quit()
 					runtime.Quit(ctx)
-					os.Exit(0)
 				}
 			}
 		}()
