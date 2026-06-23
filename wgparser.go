@@ -14,7 +14,10 @@ type WireGuardConfig struct {
 	DNS        []string `json:"dns"`
 	MTU        int      `json:"mtu,omitempty"`
 
-	// Peer section
+	Peers []WireGuardPeer `json:"peers"`
+}
+
+type WireGuardPeer struct {
 	PublicKey    string   `json:"publicKey"`
 	PresharedKey string   `json:"presharedKey,omitempty"`
 	Endpoint     string   `json:"endpoint"`
@@ -51,20 +54,27 @@ func ParseWireGuardConfig(content string) (WireGuardConfig, error) {
 	}
 	wg.MTU, _ = iface.Key("MTU").Int()
 
-	peer, err := cfg.GetSection("Peer")
-	if err != nil {
+	peers, err := cfg.SectionsByName("Peer")
+	if err != nil || len(peers) == 0 {
 		return wg, fmt.Errorf("missing [Peer] section")
 	}
 
-	wg.PublicKey = peer.Key("PublicKey").String()
-	if wg.PublicKey == "" {
-		return wg, fmt.Errorf("missing PublicKey in [Peer]")
+	for _, peer := range peers {
+		p := WireGuardPeer{}
+		p.PublicKey = peer.Key("PublicKey").String()
+		if p.PublicKey == "" {
+			continue // Skip invalid peer
+		}
+		p.PresharedKey = peer.Key("PresharedKey").String()
+		p.Endpoint = peer.Key("Endpoint").String()
+		if ips := peer.Key("AllowedIPs").String(); ips != "" {
+			p.AllowedIPs = splitCSV(ips)
+		}
+		wg.Peers = append(wg.Peers, p)
 	}
 
-	wg.PresharedKey = peer.Key("PresharedKey").String()
-	wg.Endpoint = peer.Key("Endpoint").String()
-	if ips := peer.Key("AllowedIPs").String(); ips != "" {
-		wg.AllowedIPs = splitCSV(ips)
+	if len(wg.Peers) == 0 {
+		return wg, fmt.Errorf("no valid [Peer] sections found")
 	}
 
 	return wg, nil

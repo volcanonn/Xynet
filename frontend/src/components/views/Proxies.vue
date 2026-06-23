@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { Globe, X, Edit2, ChevronDown, ChevronRight, Check } from '@lucide/vue';
 import { ImportWireguardConfig } from '../../../wailsjs/go/main/App';
 import { useAppState } from '../../composables/useAppState';
@@ -20,12 +20,47 @@ const expandedCitiesSet = computed(() => new Set(
   configs.value.map(c => `${c.country}:${c.city}`)
 ));
 
-const editingName = computed({
-  get: () => '',
-  set: () => {},
-});
-let editingIdx: number | null = null;
-let editNameVal = '';
+const editingName = ref('');
+const editNameVal = ref('');
+
+const startEdit = (name: string) => {
+  editingName.value = name;
+  editNameVal.value = name;
+};
+
+const saveEdit = (oldName: string) => {
+  if (!appState.value?.proxies) return;
+  const newName = editNameVal.value.trim();
+  if (!newName || newName === oldName) {
+    editingName.value = '';
+    return;
+  }
+  
+  // Update in proxies
+  const idx = appState.value.proxies.findIndex(p => p.name === oldName);
+  if (idx !== -1) {
+    appState.value.proxies[idx].name = newName;
+  }
+  
+  // Update any tunnel nodes referencing this label
+  const oldLabel = oldName.replace(/\.(conf|txt)$/, '');
+  const newLabel = newName.replace(/\.(conf|txt)$/, '');
+  
+  if (appState.value.canvasElements) {
+    appState.value.canvasElements.forEach(el => {
+      if (el.type === 'tunnel' && el.data?.label === oldLabel) {
+        el.data.label = newLabel;
+      }
+    });
+  }
+  
+  saveState();
+  editingName.value = '';
+};
+
+const cancelEdit = () => {
+  editingName.value = '';
+};
 
 const configs = computed<ProxyConfig[]>(() => {
   if (!appState.value?.proxies) return [];
@@ -88,7 +123,7 @@ const removeConfig = (name: string) => {
       <Globe :size="48" class="icon" />
       <h2>Proxies</h2>
       <p>Manage your imported proxies and VPNs here.</p>
-      <button @click="importConfig" class="import-btn">Import WireGuard Config</button>
+      <button @click="importConfig" class="import-btn">Import Proxy Config</button>
     </div>
 
     <div v-if="configs.length > 0" class="proxy-list-container">
@@ -110,11 +145,38 @@ const removeConfig = (name: string) => {
             <div class="servers-container">
               <div v-for="server in serverList" :key="server.name" class="server-item">
                 <div class="server-info">
-                  <span class="server-name">{{ server.name }}</span>
+                  <template v-if="editingName === server.name">
+                    <input 
+                      v-model="editNameVal" 
+                      @keyup.enter="saveEdit(server.name)"
+                      @keyup.esc="cancelEdit"
+                      class="edit-input" 
+                      autoFocus
+                    />
+                  </template>
+                  <template v-else>
+                    <span class="server-name">{{ server.name }}</span>
+                  </template>
                 </div>
-                <button class="icon-btn delete-btn" @click.stop="removeConfig(server.name)" title="Remove">
-                  <X :size="16" />
-                </button>
+                
+                <div style="display: flex; gap: 0.25rem;">
+                  <template v-if="editingName === server.name">
+                    <button class="icon-btn" @click.stop="saveEdit(server.name)" title="Save">
+                      <Check :size="16" />
+                    </button>
+                    <button class="icon-btn" @click.stop="cancelEdit" title="Cancel">
+                      <X :size="16" />
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button class="icon-btn" @click.stop="startEdit(server.name)" title="Rename">
+                      <Edit2 :size="16" />
+                    </button>
+                    <button class="icon-btn delete-btn" @click.stop="removeConfig(server.name)" title="Remove">
+                      <X :size="16" />
+                    </button>
+                  </template>
+                </div>
               </div>
             </div>
           </div>
@@ -123,7 +185,7 @@ const removeConfig = (name: string) => {
     </div>
 
     <div v-else class="empty-state">
-      <p>No proxies imported yet. Click the button above to import a WireGuard config file.</p>
+      <p>No proxies imported yet. Click the button above to import a proxy config file.</p>
     </div>
   </div>
 </template>
@@ -280,6 +342,17 @@ h2 {
 
 .delete-btn:hover {
   color: #ef4444;
+}
+
+.edit-input {
+  background: var(--bg-card);
+  border: 1px solid var(--accent-primary);
+  color: var(--text-primary);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+  width: 100%;
+  outline: none;
 }
 
 .empty-state {

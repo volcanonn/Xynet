@@ -12,12 +12,12 @@ import (
 var trayIcon []byte
 
 func (a *App) setupSystray(ctx context.Context) {
-	systray.Register(func() {
+	onReady := func() {
 		systray.SetIcon(trayIcon)
-		systray.SetTitle("NodeNet")
-		systray.SetTooltip("NodeNet - Visual VPN Manager")
+		systray.SetTitle("Xynet")
+		systray.SetTooltip("Xynet - Visual VPN Manager")
 
-		mShow := systray.AddMenuItem("Open NodeNet", "Show the main window")
+		mShow := systray.AddMenuItem("Open Xynet", "Show the main window")
 		systray.AddSeparator()
 		mDisconnectAll := systray.AddMenuItem("Disconnect All Tunnels", "Stop all proxies")
 		mKillSwitch := systray.AddMenuItem("Kill All Strict Apps", "Kill all vopono namespaces")
@@ -30,7 +30,7 @@ func (a *App) setupSystray(ctx context.Context) {
 				case <-mShow.ClickedCh:
 					runtime.WindowShow(ctx)
 				case <-mDisconnectAll.ClickedCh:
-					a.StopSingbox()
+					a.Undeploy()
 				case <-mKillSwitch.ClickedCh:
 					procs := a.ListVoponoProcesses()
 					for _, p := range procs {
@@ -39,10 +39,15 @@ func (a *App) setupSystray(ctx context.Context) {
 				case <-mQuit.ClickedCh:
 					systray.Quit()
 					runtime.Quit(ctx)
+				case <-ctx.Done():
+					systray.Quit()
+					return
 				}
 			}
 		}()
-	}, func() {
-		// on exit
-	})
+	}
+
+	onExit := func() {}
+
+	go systray.Run(onReady, onExit)
 }

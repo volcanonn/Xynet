@@ -38,6 +38,10 @@ export function LoadState() {
   return window['go']['main']['App']['LoadState']();
 }
 
+export function MeasureLatency(arg1) {
+  return window['go']['main']['App']['MeasureLatency'](arg1);
+}
+
 export function RestartSingbox() {
   return window['go']['main']['App']['RestartSingbox']();
 }

@@ -143,34 +143,106 @@ func (a *App) deploySingbox(rules []RoutingRule, state AppState) error {
 			seenTunnels[rule.TunnelID] = true
 
 			proxy, ok := proxyMap[rule.TunnelLabel]
-			if !ok {
-				return fmt.Errorf("no imported config found for tunnel %q — import it in the Proxies tab first", rule.TunnelLabel)
-			}
+				if !ok {
+					return fmt.Errorf("no imported config found for tunnel %q — import it in the Proxies tab first", rule.TunnelLabel)
+				}
 
-			wg, err := ParseWireGuardConfig(proxy.Content)
-			if err != nil {
-				return fmt.Errorf("parse config %q: %w", rule.TunnelLabel, err)
-			}
+				if rule.TunnelType == "WireGuard" {
+					wg, err := ParseWireGuardConfig(proxy.Content)
+					if err != nil {
+						return fmt.Errorf("parse config %q: %w", rule.TunnelLabel, err)
+					}
 
-			if rule.TunnelType == "WireGuard" {
-				server, port := splitEndpoint(wg.Endpoint)
-				ob := map[string]interface{}{
-					"type":            "wireguard",
-					"tag":             outboundTag,
-					"server":          server,
-					"server_port":     port,
-					"local_address":   wg.Address,
-					"private_key":     wg.PrivateKey,
-					"peer_public_key": wg.PublicKey,
+					ob := map[string]interface{}{
+						"type":          "wireguard",
+						"tag":           outboundTag,
+						"local_address": wg.Address,
+						"private_key":   wg.PrivateKey,
+					}
+					if wg.MTU > 0 {
+						ob["mtu"] = wg.MTU
+					}
+
+					if len(wg.Peers) == 1 {
+						p := wg.Peers[0]
+						server, port := splitEndpoint(p.Endpoint)
+						ob["server"] = server
+						ob["server_port"] = port
+						ob["peer_public_key"] = p.PublicKey
+						if p.PresharedKey != "" {
+							ob["pre_shared_key"] = p.PresharedKey
+						}
+					} else if len(wg.Peers) > 1 {
+						var peersList []map[string]interface{}
+						for _, p := range wg.Peers {
+							server, port := splitEndpoint(p.Endpoint)
+							peerObj := map[string]interface{}{
+								"server":          server,
+								"server_port":     port,
+								"peer_public_key": p.PublicKey,
+							}
+							if p.PresharedKey != "" {
+								peerObj["pre_shared_key"] = p.PresharedKey
+							}
+							peersList = append(peersList, peerObj)
+						}
+						ob["peers"] = peersList
+					}
+					outbounds = append(outbounds, ob)
+				} else if rule.TunnelType == "Hysteria2" {
+					// Parse Hysteria2 URI: hysteria2://auth@host:port/?sni=domain.com&insecure=1
+					uri := strings.TrimSpace(proxy.Content)
+					if !strings.HasPrefix(uri, "hysteria2://") {
+						return fmt.Errorf("invalid hysteria2 URI for tunnel %q", rule.TunnelLabel)
+					}
+					
+					parts := strings.SplitN(strings.TrimPrefix(uri, "hysteria2://"), "@", 2)
+					if len(parts) != 2 {
+						return fmt.Errorf("invalid hysteria2 URI format for tunnel %q", rule.TunnelLabel)
+					}
+					auth := parts[0]
+					
+					hostQuery := strings.SplitN(parts[1], "/", 2)
+					server, port := splitEndpoint(hostQuery[0])
+					
+					sni := ""
+					insecure := false
+					if len(hostQuery) > 1 && strings.HasPrefix(hostQuery[1], "?") {
+						query := hostQuery[1][1:]
+						qParts := strings.Split(query, "&")
+						for _, qp := range qParts {
+							kv := strings.SplitN(qp, "=", 2)
+							if len(kv) == 2 {
+								if kv[0] == "sni" {
+									sni = kv[1]
+								} else if kv[0] == "insecure" && kv[1] == "1" {
+									insecure = true
+								}
+							}
+						}
+					}
+
+					ob := map[string]interface{}{
+						"type":        "hysteria2",
+						"tag":         outboundTag,
+						"server":      server,
+						"server_port": port,
+						"password":    auth,
+					}
+					
+					tls := map[string]interface{}{
+						"enabled": true,
+					}
+					if sni != "" {
+						tls["server_name"] = sni
+					}
+					if insecure {
+						tls["insecure"] = true
+					}
+					ob["tls"] = tls
+					
+					outbounds = append(outbounds, ob)
 				}
-				if wg.PresharedKey != "" {
-					ob["pre_shared_key"] = wg.PresharedKey
-				}
-				if wg.MTU > 0 {
-					ob["mtu"] = wg.MTU
-				}
-				outbounds = append(outbounds, ob)
-			}
 		}
 
 		routeRules = append(routeRules, map[string]interface{}{
@@ -335,6 +407,9 @@ func (a *App) deployDae(rules []RoutingRule, state AppState) error {
 	}
 
 	var routingLines []string
+	var scriptLines []string
+	scriptLines = append(scriptLines, "#!/bin/bash", "set -e")
+
 	fwmarkBase := uint32(0x4E01)
 	tableBase := 100
 	seenTunnels := map[string]uint32{}
@@ -356,23 +431,25 @@ func (a *App) deployDae(rules []RoutingRule, state AppState) error {
 					return fmt.Errorf("no imported config found for tunnel %q — import it in the Proxies tab first", rule.TunnelLabel)
 				}
 
+				if rule.TunnelType == "Hysteria2" {
+					return fmt.Errorf("dae backend does not support Hysteria2. Please switch to sing-box in Settings")
+				}
+
 				confPath := filepath.Join(wgDir, rule.TunnelLabel+".conf")
 				if err := os.WriteFile(confPath, []byte(proxy.Content), 0600); err != nil {
 					return fmt.Errorf("write wg config: %w", err)
 				}
 
-				exec.Command("wg-quick", "down", confPath).Run()
-				if out, err := exec.Command("wg-quick", "up", confPath).CombinedOutput(); err != nil {
-					return fmt.Errorf("wg-quick up %s: %s", rule.TunnelLabel, string(out))
-				}
-
 				table := tableBase + len(seenTunnels) - 1
 				ifName := rule.TunnelLabel
 
-				exec.Command("ip", "rule", "add", "fwmark",
-					fmt.Sprintf("0x%x", fwmark), "table", fmt.Sprintf("%d", table)).Run()
-				exec.Command("ip", "route", "add", "default",
-					"dev", ifName, "table", fmt.Sprintf("%d", table)).Run()
+				scriptLines = append(scriptLines,
+					fmt.Sprintf("wg-quick down %q 2>/dev/null || true", confPath),
+					fmt.Sprintf("wg-quick up %q", confPath),
+					fmt.Sprintf("ip rule del fwmark 0x%x table %d 2>/dev/null || true", fwmark, table),
+					fmt.Sprintf("ip rule add fwmark 0x%x table %d", fwmark, table),
+					fmt.Sprintf("ip route add default dev %q table %d 2>/dev/null || true", ifName, table),
+				)
 			}
 
 			routingLines = append(routingLines, fmt.Sprintf("    pname(%s) -> direct(mark: 0x%x)", rule.ProcessName, fwmark))
@@ -392,27 +469,54 @@ routing {
 }
 `, strings.Join(routingLines, "\n"))
 
-	daeConfigPath := "/etc/dae/config.dae"
+	daeConfigPath := filepath.Join(configDir, "xynet", "config.dae")
 	if err := os.WriteFile(daeConfigPath, []byte(daeConfig), 0644); err != nil {
 		return fmt.Errorf("write dae config: %w", err)
 	}
 
-	if out, err := exec.Command("systemctl", "reload-or-restart", "dae").CombinedOutput(); err != nil {
-		return fmt.Errorf("restart dae: %s", string(out))
+	scriptLines = append(scriptLines,
+		"mkdir -p /etc/dae",
+		fmt.Sprintf("cp %q /etc/dae/config.dae", daeConfigPath),
+		"systemctl reload-or-restart dae",
+	)
+
+	scriptPath := filepath.Join(configDir, "xynet", "dae_deploy.sh")
+	if err := os.WriteFile(scriptPath, []byte(strings.Join(scriptLines, "\n")), 0700); err != nil {
+		return fmt.Errorf("write dae deploy script: %w", err)
+	}
+
+	cmd := exec.Command("pkexec", "bash", scriptPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("dae deploy script failed: %s (%w)", string(out), err)
 	}
 
 	return nil
 }
 
 func (a *App) stopDae() error {
-	return exec.Command("systemctl", "stop", "dae").Run()
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	scriptPath := filepath.Join(configDir, "xynet", "dae_stop.sh")
+	scriptContent := `#!/bin/bash
+systemctl stop dae
+for conf in ~/.config/xynet/wg-configs/*.conf; do
+  if [ -f "$conf" ]; then
+    wg-quick down "$conf" 2>/dev/null || true
+  fi
+done
+ip rule flush fwmark 0x4E01/0xFFFF 2>/dev/null || true
+`
+	os.WriteFile(scriptPath, []byte(scriptContent), 0700)
+	return exec.Command("pkexec", "bash", scriptPath).Run()
 }
 
 // buildProxyMap maps tunnel labels to their proxy configs
 func buildProxyMap(proxies []ImportedProxy) map[string]ImportedProxy {
 	m := make(map[string]ImportedProxy)
 	for _, p := range proxies {
-		label := strings.TrimSuffix(p.Name, ".conf")
+		label := strings.TrimSuffix(strings.TrimSuffix(p.Name, ".conf"), ".txt")
 		m[label] = p
 		m[p.Name] = p
 	}

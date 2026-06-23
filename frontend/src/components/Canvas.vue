@@ -105,8 +105,8 @@ onMounted(async () => {
     // Build tunnel list from imported proxies
     if (appState.value?.proxies) {
         availableOutputs.value = appState.value.proxies.map((p: any) => ({
-            label: p.name.replace(/\.conf$/, ""),
-            type: "WireGuard",
+            label: p.name.replace(/\.(conf|txt)$/, ""),
+            type: p.content.trim().startsWith('hysteria2://') ? 'Hysteria2' : 'WireGuard',
             latency: "--",
         }));
     }
@@ -280,6 +280,7 @@ const startPlugDrag = (
 provide("startPlugDrag", startPlugDrag);
 
 onUnmounted(() => {
+    if (saveTimeout) clearTimeout(saveTimeout);
     window.removeEventListener("pointermove", onDragMove);
     window.removeEventListener("pointerup", onDragEnd);
 });
@@ -335,10 +336,10 @@ const importConfig = async () => {
         if (appState.value) {
             if (!appState.value.proxies) appState.value.proxies = [];
             appState.value.proxies.push(proxy);
-            const tunnelLabel = proxy.name.replace(/\.conf$/, "");
+            const tunnelLabel = proxy.name.replace(/\.(conf|txt)$/, "");
             availableOutputs.value.push({
                 label: tunnelLabel,
-                type: "WireGuard",
+                type: proxy.content.trim().startsWith('hysteria2://') ? 'Hysteria2' : 'WireGuard',
                 latency: "--",
             });
             saveState();

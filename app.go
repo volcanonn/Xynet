@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -75,6 +76,15 @@ func (a *App) shutdown(ctx context.Context) {
 
 // LaunchStrict launches an app inside a Vopono network namespace for strict isolation
 func (a *App) LaunchStrict(processName string, tunnelLabel string) (VoponoProcess, error) {
+	a.voponoMu.Lock()
+	for _, p := range a.processInfo {
+		if p.AppName == processName && p.ConfigName == tunnelLabel {
+			a.voponoMu.Unlock()
+			return VoponoProcess{}, fmt.Errorf("app %q is already running in strict mode with tunnel %q", processName, tunnelLabel)
+		}
+	}
+	a.voponoMu.Unlock()
+
 	state, err := a.LoadState()
 	if err != nil {
 		return VoponoProcess{}, fmt.Errorf("load state: %w", err)
@@ -100,7 +110,7 @@ func (a *App) LaunchStrict(processName string, tunnelLabel string) (VoponoProces
 		return VoponoProcess{}, fmt.Errorf("write config: %w", err)
 	}
 
-	cmd := exec.Command("vopono", "exec", "--custom", confPath, processName)
+	cmd := exec.Command("pkexec", "vopono", "exec", "--custom", confPath, processName)
 
 	if err := cmd.Start(); err != nil {
 		return VoponoProcess{}, fmt.Errorf("failed to start vopono: %v", err)
@@ -181,6 +191,46 @@ func (a *App) ListVoponoProcesses() []VoponoProcess {
 	return procs
 }
 
+// MeasureLatency attempts to ping the endpoint in the config
+func (a *App) MeasureLatency(configContent string) string {
+	var endpoint string
+
+	// Try to parse as WireGuard
+	if wg, err := ParseWireGuardConfig(configContent); err == nil && len(wg.Peers) > 0 && wg.Peers[0].Endpoint != "" {
+		endpoint, _ = splitEndpoint(wg.Peers[0].Endpoint)
+	} else if strings.HasPrefix(configContent, "hysteria2://") {
+		// Hysteria2 URI format: hysteria2://auth@host:port/...
+		parts := strings.Split(configContent, "@")
+		if len(parts) > 1 {
+			hostPort := strings.Split(parts[1], "/")
+			endpoint, _ = splitEndpoint(hostPort[0])
+		}
+	}
+
+	if endpoint == "" {
+		return "--"
+	}
+
+	// Simple ICMP ping using the ping command
+	out, err := exec.Command("ping", "-c", "1", "-W", "1", endpoint).CombinedOutput()
+	if err != nil {
+		return "Timeout"
+	}
+
+	// Extract time=X ms
+	outStr := string(out)
+	idx := strings.Index(outStr, "time=")
+	if idx != -1 {
+		timeStr := outStr[idx+5:]
+		endIdx := strings.Index(timeStr, " ms")
+		if endIdx != -1 {
+			return timeStr[:endIdx] + "ms"
+		}
+	}
+
+	return "--"
+}
+
 // ImportedProxy represents an imported configuration file
 type ImportedProxy struct {
 	Name    string `json:"name"`
@@ -190,11 +240,11 @@ type ImportedProxy struct {
 // ImportWireguardConfig opens a file dialog to select a wireguard config file
 func (a *App) ImportWireguardConfig() (ImportedProxy, error) {
 	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Select Wireguard Config",
+		Title: "Select Proxy Config",
 		Filters: []runtime.FileFilter{
 			{
-				DisplayName: "Wireguard Config (*.conf)",
-				Pattern:     "*.conf",
+				DisplayName: "Proxy Configs (*.conf, *.txt)",
+				Pattern:     "*.conf;*.txt",
 			},
 		},
 	})

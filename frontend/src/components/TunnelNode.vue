@@ -2,8 +2,10 @@
 import { Handle, Position, useVueFlow } from "@vue-flow/core";
 import type { NodeProps } from "@vue-flow/core";
 import { Shield } from "@lucide/vue";
-import { computed, inject } from "vue";
+import { computed, inject, onMounted, ref } from "vue";
 import { useWireStacking } from "../composables/useWireStacking";
+import { useAppState } from "../composables/useAppState";
+import { MeasureLatency } from "../../wailsjs/go/main/App";
 
 interface TunnelNodeData {
     label: string;
@@ -47,6 +49,22 @@ const ghostOffset = useWireStacking(
     () => (isHovered.value ? dragWire?.sourceId : undefined),
     dragWire
 );
+
+const { appState } = useAppState();
+const measuredLatency = ref<string>("");
+
+onMounted(async () => {
+    if (props.data.type === 'WireGuard' || props.data.type === 'Hysteria2') {
+        const proxy = appState.value?.proxies?.find(p => p.name.replace(/\.(conf|txt)$/, '') === props.data.label);
+        if (proxy) {
+            try {
+                measuredLatency.value = await MeasureLatency(proxy.content);
+            } catch (e) {
+                measuredLatency.value = "Error";
+            }
+        }
+    }
+});;
 </script>
 
 <template>
@@ -98,8 +116,8 @@ const ghostOffset = useWireStacking(
                 <span class="label">{{ data.label }}</span>
                 <span
                     class="latency"
-                    :style="{ color: getLatencyColor(data.latency) }"
-                    >{{ data.latency || "--" }}</span
+                    :style="{ color: getLatencyColor(measuredLatency || data.latency) }"
+                    >{{ measuredLatency || data.latency || "--" }}</span
                 >
             </div>
         </div>

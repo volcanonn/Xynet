@@ -20,6 +20,8 @@ export function ListVoponoProcesses():Promise<Array<main.VoponoProcess>>;
 
 export function LoadState():Promise<main.AppState>;
 
+export function MeasureLatency(arg1:string):Promise<string>;
+
 export function RestartSingbox():Promise<void>;
 
 export function SaveState(arg1:main.AppState):Promise<void>;

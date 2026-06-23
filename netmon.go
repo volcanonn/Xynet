@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"time"
 
 	psnet "github.com/shirou/gopsutil/v4/net"
@@ -15,55 +16,50 @@ type NetStats struct {
 func (a *App) startNetMonitor() {
 	go func() {
 		var prevRx, prevTx uint64
-		var prevIface string
 		first := true
 
 		for {
-			iface, rx, tx := getNetCounters()
+			if a.ctx != nil {
+				select {
+				case <-a.ctx.Done():
+					return
+				default:
+				}
+			}
+
+			rx, tx := getAggregateNetCounters()
 
 			if !first && a.ctx != nil {
-				if iface != prevIface || rx < prevRx || tx < prevTx {
-					prevRx = rx
-					prevTx = tx
-					prevIface = iface
-					time.Sleep(1 * time.Second)
-					continue
+				if rx >= prevRx && tx >= prevTx {
+					stats := NetStats{
+						Upload:   float64(tx - prevTx),
+						Download: float64(rx - prevRx),
+					}
+					runtime.EventsEmit(a.ctx, "net-stats", stats)
 				}
-				stats := NetStats{
-					Upload:   float64(tx - prevTx),
-					Download: float64(rx - prevRx),
-				}
-				runtime.EventsEmit(a.ctx, "net-stats", stats)
 			}
 
 			prevRx = rx
 			prevTx = tx
-			prevIface = iface
 			first = false
 			time.Sleep(1 * time.Second)
 		}
 	}()
 }
 
-func getNetCounters() (iface string, rx, tx uint64) {
+func getAggregateNetCounters() (rx, tx uint64) {
 	counters, err := psnet.IOCounters(true)
 	if err != nil {
-		return "lo", 0, 0
+		return 0, 0
 	}
 
+	var totalRx, totalTx uint64
 	for _, c := range counters {
-		if c.Name == "lo" {
+		if c.Name == "lo" || strings.HasPrefix(c.Name, "tun") || strings.HasPrefix(c.Name, "wg") || strings.HasPrefix(c.Name, "veth") || strings.HasPrefix(c.Name, "br-") || strings.HasPrefix(c.Name, "docker") {
 			continue
 		}
-		if c.BytesRecv > 0 || c.BytesSent > 0 {
-			return c.Name, c.BytesRecv, c.BytesSent
-		}
+		totalRx += c.BytesRecv
+		totalTx += c.BytesSent
 	}
-
-	// Fallback to aggregate if no single active interface found
-	agg, err := psnet.IOCounters(false)
-	if err != nil || len(agg) == 0 {
-		return "lo", 0, 0
-	}
-	return "all", agg[0].BytesRecv, agg[0].BytesSent
+	return totalRx, totalTx
 }

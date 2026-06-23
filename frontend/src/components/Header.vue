@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { Activity } from '@lucide/vue';
 import { useAppState } from '../composables/useAppState';
 import { generateRoutingRules } from '../composables/routeGenerator';
-import { Deploy, GetBackendStatus, ListVoponoProcesses } from '../../wailsjs/go/main/App';
+import { Deploy, Undeploy, GetBackendStatus, ListVoponoProcesses } from '../../wailsjs/go/main/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 
 const { appState } = useAppState();
@@ -18,6 +18,7 @@ const deploying = ref(false);
 let cleanupNetStats: (() => void) | null = null;
 let cleanupVoponoStart: (() => void) | null = null;
 let cleanupVoponoEnd: (() => void) | null = null;
+let cleanupServiceStatus: (() => void) | null = null;
 let statusPoll: ReturnType<typeof setInterval> | null = null;
 
 const formatSpeed = (bytesPerSec: number): string => {
@@ -58,21 +59,40 @@ onMounted(() => {
     });
     cleanupVoponoStart = EventsOn('vopono-process-started', () => refreshVoponoCount());
     cleanupVoponoEnd = EventsOn('vopono-process-ended', () => refreshVoponoCount());
+    
+    cleanupServiceStatus = EventsOn('service-status', (status: any) => {
+        backendRunning.value = status.backendRunning;
+        backendName.value = status.backendName;
+        voponoCount.value = status.voponoCount;
+    });
 
     checkStatus();
     refreshVoponoCount();
     statusPoll = setInterval(() => {
         checkStatus();
         refreshVoponoCount();
-    }, 10000);
+    }, 5000);
 });
 
 onUnmounted(() => {
     cleanupNetStats?.();
     cleanupVoponoStart?.();
     cleanupVoponoEnd?.();
+    cleanupServiceStatus?.();
     if (statusPoll) clearInterval(statusPoll);
 });
+
+const undeployConfig = async () => {
+    deploying.value = true;
+    try {
+        await Undeploy();
+        await checkStatus();
+    } catch (e) {
+        console.error("Failed to undeploy:", e);
+    } finally {
+        deploying.value = false;
+    }
+};
 
 const deployConfig = async () => {
     if (!appState.value) return;
@@ -104,6 +124,9 @@ const deployConfig = async () => {
     </div>
 
     <div class="actions">
+      <button v-if="backendRunning" class="undeploy-btn" @click="undeployConfig" :disabled="deploying">
+        Disconnect
+      </button>
       <button class="deploy-btn" @click="deployConfig" :disabled="deploying">
         <Activity class="icon" :size="16" />
         {{ deploying ? 'Deploying...' : 'Deploy' }}
@@ -182,6 +205,32 @@ const deployConfig = async () => {
 }
 
 .deploy-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.undeploy-btn {
+  display: flex;
+  align-items: center;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-right: 0.5rem;
+}
+
+.undeploy-btn:hover {
+  background-color: #3f3f46;
+  border-color: var(--accent-danger);
+  color: var(--accent-danger);
+}
+
+.undeploy-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
