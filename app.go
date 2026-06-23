@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"net"
 	"fmt"
 	"os"
 	"os/exec"
@@ -64,6 +65,18 @@ func (a *App) EmitLog(source, msg string) {
 			Message:   msg,
 		})
 	}
+}
+
+func (a *App) GetInterfaces() []string {
+	var interfaceNames []string
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return interfaceNames
+	}
+	for _, i := range interfaces {
+		interfaceNames = append(interfaceNames, i.Name)
+	}
+	return interfaceNames
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -271,9 +284,9 @@ type ImportedProxy struct {
 }
 
 // ImportWireguardConfig opens a file dialog to select a wireguard config file
-func (a *App) ImportWireguardConfig() (ImportedProxy, error) {
-	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Select Proxy Config",
+func (a *App) ImportProxyConfigs() ([]ImportedProxy, error) {
+	selections, err := runtime.OpenMultipleFilesDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Proxy Configs",
 		Filters: []runtime.FileFilter{
 			{
 				DisplayName: "Proxy Configs (*.conf, *.txt)",
@@ -281,24 +294,37 @@ func (a *App) ImportWireguardConfig() (ImportedProxy, error) {
 			},
 		},
 	})
-	if err != nil || selection == "" {
-		return ImportedProxy{}, err
+	if err != nil || len(selections) == 0 {
+		return nil, err
 	}
 
-	content, err := os.ReadFile(selection)
-	if err != nil {
-		return ImportedProxy{}, err
+	var imported []ImportedProxy
+	var errs []string
+
+	for _, selection := range selections {
+		content, err := os.ReadFile(selection)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("Failed to read %s: %v", filepath.Base(selection), err))
+			continue
+		}
+
+		contentStr := string(content)
+
+		// Validate content
+		if _, err := ParseWireGuardConfig(contentStr); err != nil && !strings.HasPrefix(strings.TrimSpace(contentStr), "hysteria2://") {
+			errs = append(errs, fmt.Sprintf("Invalid format for %s: must be valid WireGuard .conf or hysteria2:// URI", filepath.Base(selection)))
+			continue
+		}
+
+		name := filepath.Base(selection)
+		imported = append(imported, ImportedProxy{Name: name, Content: contentStr})
 	}
 
-	contentStr := string(content)
-
-	// Validate content
-	if _, err := ParseWireGuardConfig(contentStr); err != nil && !strings.HasPrefix(strings.TrimSpace(contentStr), "hysteria2://") {
-		return ImportedProxy{}, fmt.Errorf("invalid config format: must be valid WireGuard .conf or hysteria2:// URI")
+	if len(imported) == 0 && len(errs) > 0 {
+		return nil, fmt.Errorf(strings.Join(errs, "\n"))
 	}
 
-	name := filepath.Base(selection)
-	return ImportedProxy{Name: name, Content: contentStr}, nil
+	return imported, nil
 }
 
 // RoutingRule represents a process-to-tunnel mapping

@@ -14,12 +14,16 @@ export function GetBackendStatus() {
   return window['go']['main']['App']['GetBackendStatus']();
 }
 
+export function GetInterfaces() {
+  return window['go']['main']['App']['GetInterfaces']();
+}
+
 export function GetServiceStatus() {
   return window['go']['main']['App']['GetServiceStatus']();
 }
 
-export function ImportWireguardConfig() {
-  return window['go']['main']['App']['ImportWireguardConfig']();
+export function ImportProxyConfigs() {
+  return window['go']['main']['App']['ImportProxyConfigs']();
 }
 
 export function KillVopono(arg1) {

@@ -67,3 +67,27 @@ html, body {
 .justify-center { justify-content: center; }
 .gap-2 { gap: 0.5rem; }
 .gap-4 { gap: 1rem; }
+
+/* Light Theme Variables */
+body.light-theme {
+  --bg-app: #f4f4f5;
+  --bg-sidebar: #ffffff;
+  --bg-header: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f4f4f5;
+  
+  --border-color: #e4e4e7;
+  
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+}
+
+body.light-theme .app-node,
+body.light-theme .tunnel-node {
+  background-color: var(--bg-card);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+body.light-theme .xynet-theme .vue-flow__edge-path {
+  stroke: #a1a1aa;
+}

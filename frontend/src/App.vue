@@ -10,8 +10,18 @@ import Settings from './components/views/Settings.vue';
 import { useToast } from './composables/useToast';
 import { AlertCircle, CheckCircle, Info } from '@lucide/vue';
 
+import { useAppState } from './composables/useAppState';
+import { onMounted } from 'vue';
+
 const activeTab = ref('routing');
 const { toasts } = useToast();
+const { appState } = useAppState();
+
+onMounted(() => {
+  if (appState.value?.settings?.theme === 'light') {
+    document.body.className = 'light-theme';
+  }
+});
 </script>
 
 <template>

@@ -6,22 +6,18 @@ import { generateRoutingRules } from '../composables/routeGenerator';
 import { Deploy, Undeploy, GetBackendStatus, ListVoponoProcesses } from '../../wailsjs/go/main/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { useToast } from '../composables/useToast';
+import { useTelemetry } from '../composables/useTelemetry';
+import { useActiveDeployment } from '../composables/useActiveDeployment';
 
 const { appState } = useAppState();
 const toast = useToast();
+const { upload, download, backendRunning, backendName, voponoCount, deployedAppCount, deployedTunnelCount } = useTelemetry();
+const { activeRules } = useActiveDeployment();
 
-const upload = ref(0);
-const download = ref(0);
-const backendRunning = ref(false);
-const backendName = ref('singbox');
-const voponoCount = ref(0);
 const deploying = ref(false);
-
-let cleanupNetStats: (() => void) | null = null;
 let cleanupVoponoStart: (() => void) | null = null;
 let cleanupVoponoEnd: (() => void) | null = null;
-let cleanupServiceStatus: (() => void) | null = null;
-let statusPoll: ReturnType<typeof setInterval> | null = null;
+
 
 const formatSpeed = (bytesPerSec: number): string => {
     if (bytesPerSec >= 1_073_741_824) return (bytesPerSec / 1_073_741_824).toFixed(1) + ' GB/s';
@@ -55,33 +51,17 @@ const refreshVoponoCount = async () => {
 };
 
 onMounted(() => {
-    cleanupNetStats = EventsOn('net-stats', (stats: any) => {
-        upload.value = stats.upload;
-        download.value = stats.download;
-    });
     cleanupVoponoStart = EventsOn('vopono-process-started', () => refreshVoponoCount());
     cleanupVoponoEnd = EventsOn('vopono-process-ended', () => refreshVoponoCount());
-    
-    cleanupServiceStatus = EventsOn('service-status', (status: any) => {
-        backendRunning.value = status.backendRunning;
-        backendName.value = status.backendName;
-        voponoCount.value = status.voponoCount;
-    });
 
     checkStatus();
     refreshVoponoCount();
-    statusPoll = setInterval(() => {
-        checkStatus();
-        refreshVoponoCount();
-    }, 5000);
 });
 
 onUnmounted(() => {
-    cleanupNetStats?.();
     cleanupVoponoStart?.();
     cleanupVoponoEnd?.();
-    cleanupServiceStatus?.();
-    if (statusPoll) clearInterval(statusPoll);
+
 });
 
 const undeployConfig = async () => {
@@ -89,6 +69,9 @@ const undeployConfig = async () => {
     try {
         await Undeploy();
         await checkStatus();
+        activeRules.value = [];
+        deployedAppCount.value = 0;
+        deployedTunnelCount.value = 0;
     } catch (e) {
         toast.error(`Undeploy failed: ${e}`);
     } finally {
@@ -103,6 +86,9 @@ const deployConfig = async () => {
         const rules = generateRoutingRules(appState.value);
         await Deploy(rules);
         await checkStatus();
+        activeRules.value = rules;
+        deployedAppCount.value = rules.length;
+        deployedTunnelCount.value = new Set(rules.map((r: any) => r.tunnelId)).size;
     } catch (e) {
         toast.error(`Deploy failed: ${e}`);
     } finally {

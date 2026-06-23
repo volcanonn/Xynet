@@ -5,6 +5,7 @@ import { Shield } from "@lucide/vue";
 import { computed, inject, onMounted, ref } from "vue";
 import { useWireStacking } from "../composables/useWireStacking";
 import { useAppState } from "../composables/useAppState";
+import { useActiveDeployment } from "../composables/useActiveDeployment";
 import { MeasureLatency } from "../../wailsjs/go/main/App";
 
 interface TunnelNodeData {
@@ -52,6 +53,10 @@ const ghostOffset = useWireStacking(
 
 const { appState } = useAppState();
 const measuredLatency = ref<string>("");
+const { activeRules } = useActiveDeployment();
+const isActive = computed(() => {
+    return activeRules.value.some((r: any) => r.tunnelId === props.id);
+});
 
 onMounted(async () => {
     if (props.data.type === 'WireGuard' || props.data.type === 'Hysteria2') {
@@ -68,7 +73,7 @@ onMounted(async () => {
 </script>
 
 <template>
-    <div class="tunnel-node" :class="{ 'pulse-animate': isHovered && isEmpty }">
+    <div class="tunnel-node" :class="{ 'pulse-animate': isHovered && isEmpty, 'is-active-route': isActive }">
         <Handle
             v-if="isInFlow"
             id="target"
@@ -161,6 +166,10 @@ onMounted(async () => {
 .tunnel-node.pulse-animate {
     animation: pulse-glow 1.5s infinite;
     border-color: var(--accent-success);
+}
+.tunnel-node.is-active-route {
+    border-color: var(--accent-success);
+    box-shadow: 0 0 0 1px var(--accent-success);
 }
 
 .target-handle {

@@ -13,7 +13,7 @@ import "@vue-flow/core/dist/style.css";
 import "@vue-flow/core/dist/theme-default.css";
 import { useAppState } from "../composables/useAppState";
 import { useToast } from "../composables/useToast";
-import { ListDesktopApps, ImportWireguardConfig } from "../../wailsjs/go/main/App";
+import { ListDesktopApps, ImportProxyConfigs } from "../../wailsjs/go/main/App";
 
 const nodeTypes = {
     application: markRaw(ApplicationNode),
@@ -333,22 +333,32 @@ const toast = useToast();
 
 const importConfig = async () => {
     try {
-        const proxy = await ImportWireguardConfig();
-        if (!proxy || !proxy.name) return;
-        if (appState.value) {
+        const importedList = await ImportProxyConfigs();
+        if (importedList && importedList.length > 0 && appState.value) {
             if (!appState.value.proxies) appState.value.proxies = [];
-            appState.value.proxies.push(proxy);
-            const tunnelLabel = proxy.name.replace(/\.(conf|txt)$/, "");
-            availableOutputs.value.push({
-                label: tunnelLabel,
-                type: proxy.content.trim().startsWith('hysteria2://') ? 'Hysteria2' : 'WireGuard',
-                latency: "--",
-            });
+            
+            for (const proxy of importedList) {
+                // Ensure no duplicates in canvas list
+                const tunnelLabel = proxy.name.replace(/\.(conf|txt)$/, "");
+                const exists = appState.value.proxies.some((p: any) => p.name === proxy.name);
+                
+                if (exists) {
+                    const idx = appState.value.proxies.findIndex((p: any) => p.name === proxy.name);
+                    appState.value.proxies[idx] = proxy;
+                } else {
+                    appState.value.proxies.push(proxy);
+                    availableOutputs.value.push({
+                        label: tunnelLabel,
+                        type: proxy.content.trim().startsWith('hysteria2://') ? 'Hysteria2' : 'WireGuard',
+                        latency: "--",
+                    });
+                }
+            }
             saveState();
-            toast.success('Config imported successfully');
+            toast.success(`${importedList.length} config(s) imported successfully`);
         }
     } catch (e) {
-        toast.error(`Import failed: ${e}`);
+        if (e) toast.error(`Import failed: ${e}`);
     }
 };
 

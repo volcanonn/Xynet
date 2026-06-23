@@ -4,6 +4,7 @@ import type { NodeProps } from "@vue-flow/core";
 import { computed, ref } from "vue";
 import { Play } from "@lucide/vue";
 import { useAppState } from "../composables/useAppState";
+import { useActiveDeployment } from "../composables/useActiveDeployment";
 import { LaunchStrict } from "../../wailsjs/go/main/App";
 import { useToast } from "../composables/useToast";
 
@@ -31,6 +32,10 @@ const isInFlow = computed(() => !!findNode(props.id));
 const mode = computed(() => props.data.mode || "Standard");
 const launching = ref(false);
 const toast = useToast();
+const { activeRules } = useActiveDeployment();
+const isActive = computed(() => {
+    return activeRules.value.some((r: any) => r.processName === props.data.processName && mode.value === 'Standard');
+});
 
 const connectedTunnel = computed(() => {
     const edges = getConnectedEdges(props.id);
@@ -72,7 +77,7 @@ const launchApp = async () => {
 </script>
 
 <template>
-    <div class="app-node" :class="{ 'strict-mode': mode === 'Strict' }">
+    <div class="app-node" :class="{ 'strict-mode': mode === 'Strict', 'is-active-route': isActive }">
         <div class="node-content">
             <div class="icon-container">
                 <img v-if="data.icon" :src="data.icon" class="icon-img" />
@@ -132,6 +137,10 @@ const launchApp = async () => {
 }
 .app-node.strict-mode {
     border-color: #a855f7;
+}
+.app-node.is-active-route {
+    border-color: var(--accent-success);
+    box-shadow: 0 0 0 1px var(--accent-success);
 }
 .vue-flow__node-application.selected .app-node {
     border-color: var(--accent-primary);

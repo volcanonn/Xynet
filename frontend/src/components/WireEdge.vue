@@ -3,12 +3,18 @@ import { BaseEdge, getBezierPath, useVueFlow, Position } from "@vue-flow/core";
 import type { EdgeProps } from "@vue-flow/core";
 import { computed, inject } from "vue";
 import { useWireStacking } from "../composables/useWireStacking";
+import { useActiveDeployment } from "../composables/useActiveDeployment";
 
 const props = defineProps<EdgeProps>();
 const { edges, findNode } = useVueFlow();
 
 const dragWire = inject<any>("dragWire");
 const startPlugDrag = inject<Function>("startPlugDrag");
+const { activeRules } = useActiveDeployment();
+
+const isActive = computed(() => {
+    return activeRules.value.some((r: any) => r.tunnelId === props.target);
+});
 
 
 // Target offset for stacking
@@ -52,7 +58,7 @@ export default { inheritAttrs: false };
 <template>
     <g class="wire-edge-group">
         <!-- Main wire -->
-        <BaseEdge :path="path[0]" :style="props.style" style="pointer-events: none;" />
+        <BaseEdge :path="path[0]" :style="{ ...props.style, stroke: isActive ? 'var(--accent-success)' : 'var(--border-color)' }" style="pointer-events: none;" />
 
         <!-- Interactive Plug -->
         <g
@@ -70,12 +76,12 @@ export default { inheritAttrs: false };
                 height="8"
                 rx="2"
                 fill="var(--bg-card)"
-                stroke="var(--accent-success)"
+                :stroke="isActive ? 'var(--accent-success)' : 'var(--border-color)'"
                 stroke-width="1.5"
             />
             <path
                 d="M 0 -2 L 4 -2 M 0 2 L 4 2"
-                stroke="var(--accent-success)"
+                :stroke="isActive ? 'var(--accent-success)' : 'var(--border-color)'"
                 stroke-width="1.5"
                 stroke-linecap="round"
             />

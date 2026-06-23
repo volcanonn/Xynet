@@ -11,8 +11,9 @@ pkgbase = xynet
 	depends = sing-box
 	depends = webkit2gtk-4.1
 	depends = gtk3
-	optdepends = dae: eBPF kernel-level routing backend (Linux only)
-	optdepends = vopono: Strict mode network namespace isolation
+	optdepends = dae: eBPF kernel-level routing backend (or dae-bin / dae-git)
+	optdepends = wireguard-tools: Required to manage WireGuard interfaces when using the dae backend
+	optdepends = vopono: Strict mode network namespace isolation (or vopono-bin / vopono-git)
 	source = xynet-0.1.0.tar.gz::https://github.com/volcanonn/Xynet/archive/v0.1.0.tar.gz
 	sha256sums = SKIP
 

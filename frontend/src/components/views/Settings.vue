@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useAppState } from '../../composables/useAppState';
+import { GetInterfaces } from '../../../wailsjs/go/main/App';
 
 const { appState, saveState } = useAppState();
 
@@ -12,6 +13,38 @@ const backend = computed({
         (appState.value.settings as any).backend = val;
         saveState();
     },
+});
+
+const theme = computed({
+    get: () => appState.value?.settings?.theme || 'dark',
+    set: (val: string) => {
+        if (!appState.value) return;
+        if (!appState.value.settings) appState.value.settings = {} as any;
+        (appState.value.settings as any).theme = val;
+        saveState();
+        document.body.className = val === 'light' ? 'light-theme' : '';
+    },
+});
+
+const defaultInterface = computed({
+    get: () => appState.value?.settings?.defaultInterface || 'eth0',
+    set: (val: string) => {
+        if (!appState.value) return;
+        if (!appState.value.settings) appState.value.settings = {} as any;
+        (appState.value.settings as any).defaultInterface = val;
+        saveState();
+    },
+});
+
+const availableInterfaces = ref<string[]>([]);
+
+onMounted(async () => {
+    try {
+        const interfaces = await GetInterfaces();
+        if (interfaces) availableInterfaces.value = interfaces;
+    } catch (e) {
+        console.error("Failed to fetch interfaces", e);
+    }
 });
 
 const backends = [
@@ -28,11 +61,39 @@ const backends = [
         description: 'eBPF-based kernel-level routing. Bypassed traffic never enters userspace. Linux only, requires the dae package to be installed.',
     },
 ];
+
+const themes = [
+    { value: 'dark', label: 'Dark Theme' },
+    { value: 'light', label: 'Light Theme' },
+];
 </script>
 
 <template>
   <div class="settings-page">
     <h2>Settings</h2>
+
+    <section class="settings-section">
+      <h3>Theme</h3>
+      <p class="section-desc">Choose the application's visual appearance.</p>
+      
+      <div class="theme-options">
+        <label v-for="t in themes" :key="t.value" class="radio-label">
+          <input type="radio" :value="t.value" v-model="theme" />
+          <span>{{ t.label }}</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h3>Network Interface</h3>
+      <p class="section-desc">Select your primary physical network interface (e.g., eth0, wlan0). Used for bandwidth telemetry.</p>
+      
+      <select v-model="defaultInterface" class="interface-select">
+        <option v-for="iface in availableInterfaces" :key="iface" :value="iface">
+          {{ iface }}
+        </option>
+      </select>
+    </section>
 
     <section class="settings-section">
       <h3>Routing Backend</h3>
@@ -92,6 +153,30 @@ h3 {
   color: var(--text-secondary);
   font-size: 0.875rem;
   margin: 0 0 1rem;
+}
+
+.theme-options {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.interface-select {
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  width: 100%;
+  max-width: 300px;
+  outline: none;
 }
 
 .backend-options {

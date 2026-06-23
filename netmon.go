@@ -17,6 +17,7 @@ func (a *App) startNetMonitor() {
 	go func() {
 		var prevRx, prevTx uint64
 		first := true
+		var defaultIface string
 
 		for {
 			if a.ctx != nil {
@@ -27,7 +28,12 @@ func (a *App) startNetMonitor() {
 				}
 			}
 
-			rx, tx := getAggregateNetCounters()
+			state, err := a.LoadState()
+			if err == nil && state.Settings.DefaultInterface != "" {
+				defaultIface = state.Settings.DefaultInterface
+			}
+
+			rx, tx := getAggregateNetCounters(defaultIface)
 
 			if !first && a.ctx != nil {
 				if rx >= prevRx && tx >= prevTx {
@@ -47,7 +53,7 @@ func (a *App) startNetMonitor() {
 	}()
 }
 
-func getAggregateNetCounters() (rx, tx uint64) {
+func getAggregateNetCounters(defaultIface string) (rx, tx uint64) {
 	counters, err := psnet.IOCounters(true)
 	if err != nil {
 		return 0, 0
@@ -58,6 +64,11 @@ func getAggregateNetCounters() (rx, tx uint64) {
 		if c.Name == "lo" || strings.HasPrefix(c.Name, "tun") || strings.HasPrefix(c.Name, "wg") || strings.HasPrefix(c.Name, "veth") || strings.HasPrefix(c.Name, "br-") || strings.HasPrefix(c.Name, "docker") {
 			continue
 		}
+		
+		if defaultIface != "" && c.Name != defaultIface {
+			continue
+		}
+
 		totalRx += c.BytesRecv
 		totalTx += c.BytesSent
 	}

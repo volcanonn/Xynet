@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { Globe, X, Edit2, ChevronDown, ChevronRight, Check } from '@lucide/vue';
-import { ImportWireguardConfig } from '../../../wailsjs/go/main/App';
+import { Globe, X, Edit2, ChevronDown, Check, Code } from '@lucide/vue';
+import { ImportProxyConfigs } from '../../../wailsjs/go/main/App';
 import { useAppState } from '../../composables/useAppState';
 import { useToast } from '../../composables/useToast';
 
@@ -24,6 +24,8 @@ const expandedCitiesSet = computed(() => new Set(
 
 const editingName = ref('');
 const editNameVal = ref('');
+const editingContentName = ref('');
+const editContentVal = ref('');
 
 const startEdit = (name: string) => {
   editingName.value = name;
@@ -64,6 +66,26 @@ const cancelEdit = () => {
   editingName.value = '';
 };
 
+const startEditContent = (server: any) => {
+  editingContentName.value = server.name;
+  editContentVal.value = server.content;
+};
+
+const saveEditContent = (oldName: string) => {
+  if (!appState.value?.proxies) return;
+  const idx = appState.value.proxies.findIndex(p => p.name === oldName);
+  if (idx !== -1) {
+    appState.value.proxies[idx].content = editContentVal.value;
+    saveState();
+    toast.success('Config saved');
+  }
+  editingContentName.value = '';
+};
+
+const cancelEditContent = () => {
+  editingContentName.value = '';
+};
+
 const configs = computed<ProxyConfig[]>(() => {
   if (!appState.value?.proxies) return [];
   return appState.value.proxies.map(p => {
@@ -90,23 +112,25 @@ const groupedConfigs = computed(() => {
 
 const importConfig = async () => {
   try {
-    const imported = await ImportWireguardConfig();
-    if (imported && imported.name) {
+    const importedList = await ImportProxyConfigs();
+    if (importedList && importedList.length > 0) {
       if (!appState.value) return;
       if (!appState.value.proxies) appState.value.proxies = [];
 
-      const exists = appState.value.proxies.some(p => p.name === imported.name);
-      if (exists) {
-        const idx = appState.value.proxies.findIndex(p => p.name === imported.name);
-        appState.value.proxies[idx] = { name: imported.name, content: imported.content };
-      } else {
-        appState.value.proxies.push({ name: imported.name, content: imported.content });
+      for (const imported of importedList) {
+        const exists = appState.value.proxies.some(p => p.name === imported.name);
+        if (exists) {
+          const idx = appState.value.proxies.findIndex(p => p.name === imported.name);
+          appState.value.proxies[idx] = { name: imported.name, content: imported.content };
+        } else {
+          appState.value.proxies.push({ name: imported.name, content: imported.content });
+        }
       }
       saveState();
-      toast.success('Config imported successfully');
+      toast.success(`${importedList.length} config(s) imported successfully`);
     }
   } catch (e) {
-    toast.error(`Import failed: ${e}`);
+    if (e) toast.error(`Import failed: ${e}`);
   }
 };
 
@@ -146,8 +170,9 @@ const removeConfig = (name: string) => {
             </div>
 
             <div class="servers-container">
-              <div v-for="server in serverList" :key="server.name" class="server-item">
-                <div class="server-info">
+              <template v-for="server in serverList" :key="server.name">
+                <div class="server-item">
+                  <div class="server-info">
                   <template v-if="editingName === server.name">
                     <input 
                       v-model="editNameVal" 
@@ -175,12 +200,24 @@ const removeConfig = (name: string) => {
                     <button class="icon-btn" @click.stop="startEdit(server.name)" title="Rename">
                       <Edit2 :size="16" />
                     </button>
+                    <button class="icon-btn" @click.stop="startEditContent(server)" title="Edit Config">
+                      <Code :size="16" />
+                    </button>
                     <button class="icon-btn delete-btn" @click.stop="removeConfig(server.name)" title="Remove">
                       <X :size="16" />
                     </button>
                   </template>
                 </div>
               </div>
+              
+              <div v-if="editingContentName === server.name" class="content-editor">
+                <textarea v-model="editContentVal" class="code-editor" spellcheck="false"></textarea>
+                <div class="editor-actions">
+                  <button class="btn btn-secondary" @click="cancelEditContent">Cancel</button>
+                  <button class="btn btn-primary" @click="saveEditContent(server.name)">Save</button>
+                </div>
+              </div>
+              </template>
             </div>
           </div>
         </div>
@@ -356,6 +393,68 @@ h2 {
   font-size: 0.9em;
   width: 100%;
   outline: none;
+}
+
+.content-editor {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.code-editor {
+  width: 100%;
+  min-height: 200px;
+  background-color: #000;
+  color: #a8b2d1;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.8125rem;
+  padding: 0.75rem;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.code-editor:focus {
+  border-color: var(--accent-primary);
+}
+
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.btn {
+  padding: 0.375rem 1rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.2s;
+}
+
+.btn:hover { opacity: 0.9; }
+
+.btn-primary {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+.btn-secondary:hover {
+  background-color: rgba(255,255,255,0.05);
 }
 
 .empty-state {

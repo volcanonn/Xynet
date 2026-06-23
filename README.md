@@ -34,6 +34,8 @@ Wire Firefox to AirVPN on the canvas, click Deploy, and Firefox's traffic routes
 
 Xynet is packaged and ready for the AUR. Because `sing-box` is explicitly declared as a dependency in the `PKGBUILD`, your AUR helper will automatically download and install it for you alongside Xynet.
 
+(Note: If you prefer, `sing-box-bin` or `sing-box-git`, as well as `vopono-bin` and `dae-bin` variants from the AUR are fully compatible!)
+
 ```bash
 # Using an AUR helper like yay
 yay -S xynet

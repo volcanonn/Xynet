@@ -8,9 +8,11 @@ export function EmitLog(arg1:string,arg2:string):Promise<void>;
 
 export function GetBackendStatus():Promise<main.BackendStatus>;
 
+export function GetInterfaces():Promise<Array<string>>;
+
 export function GetServiceStatus():Promise<main.ServiceStatus>;
 
-export function ImportWireguardConfig():Promise<main.ImportedProxy>;
+export function ImportProxyConfigs():Promise<Array<main.ImportedProxy>>;
 
 export function KillVopono(arg1:string):Promise<void>;
 

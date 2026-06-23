@@ -8,8 +8,9 @@ url="https://github.com/volcanonn/Xynet"
 license=('GPL-3.0-or-later')
 depends=('sing-box' 'webkit2gtk-4.1' 'gtk3')
 optdepends=(
-    'dae: eBPF kernel-level routing backend (Linux only)'
-    'vopono: Strict mode network namespace isolation'
+    'dae: eBPF kernel-level routing backend (or dae-bin / dae-git)'
+    'wireguard-tools: Required to manage WireGuard interfaces when using the dae backend'
+    'vopono: Strict mode network namespace isolation (or vopono-bin / vopono-git)'
 )
 makedepends=('go' 'wails' 'deno')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
@@ -42,4 +43,5 @@ package() {
     install -Dm644 "xynet.desktop" "$pkgdir/usr/share/applications/xynet.desktop"
     install -Dm644 "build/appicon.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/xynet.png"
     install -Dm644 "org.xynet.pkexec.sing-box.policy" "$pkgdir/usr/share/polkit-1/actions/org.xynet.pkexec.sing-box.policy"
+    install -Dm644 "org.xynet.pkexec.vopono.policy" "$pkgdir/usr/share/polkit-1/actions/org.xynet.pkexec.vopono.policy"
 }
