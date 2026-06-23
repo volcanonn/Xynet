@@ -1,6 +1,6 @@
 # Maintainer: volcanonn <50715952+volcanonn@users.noreply.github.com>
 pkgname=xynet
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc="Visual node-based VPN and proxy manager with split-tunneling"
 arch=('x86_64')
