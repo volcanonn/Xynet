@@ -2,7 +2,7 @@
 import { LayoutDashboard, Network, Server, Shield, Activity } from '@lucide/vue';
 import { useTelemetry } from '../../composables/useTelemetry';
 
-const { upload, download, backendRunning, backendName, voponoCount, deployedAppCount, deployedTunnelCount } = useTelemetry();
+const { upload, download, backendRunning, backendStatus, backendName, voponoCount, deployedAppCount, deployedTunnelCount } = useTelemetry();
 
 const formatSpeed = (bytesPerSec: number): string => {
     if (bytesPerSec >= 1_073_741_824) return (bytesPerSec / 1_073_741_824).toFixed(1) + ' GB/s';
@@ -26,9 +26,14 @@ const formatSpeed = (bytesPerSec: number): string => {
           <h3>System Status</h3>
         </div>
         <div class="card-body status-body">
-          <div class="status-indicator" :class="{ active: backendRunning }">
+          <div class="status-indicator" :class="{ 
+            active: backendStatus === 'active', 
+            suspended: backendStatus === 'suspended' 
+          }">
             <div class="dot"></div>
-            <span class="status-text">{{ backendRunning ? 'Active' : 'Offline' }}</span>
+            <span class="status-text">
+              {{ backendStatus === 'active' ? 'Active' : (backendStatus === 'suspended' ? 'Suspended' : 'Offline') }}
+            </span>
           </div>
           <span class="backend-label">Engine: <strong>{{ backendName === 'dae' ? 'dae (eBPF)' : 'sing-box (TUN)' }}</strong></span>
         </div>
@@ -180,13 +185,28 @@ h2 {
   box-shadow: 0 0 8px var(--accent-success);
 }
 
+.status-indicator.suspended {
+  background: rgba(234, 179, 8, 0.1);
+  border-color: rgba(234, 179, 8, 0.2);
+}
+
+.status-indicator.suspended .dot {
+  background-color: #eab308;
+  box-shadow: 0 0 8px #eab308;
+}
+
 .status-text {
   font-weight: 600;
   color: var(--text-secondary);
+  text-transform: capitalize;
 }
 
 .status-indicator.active .status-text {
   color: var(--accent-success);
+}
+
+.status-indicator.suspended .status-text {
+  color: #eab308;
 }
 
 .backend-label {

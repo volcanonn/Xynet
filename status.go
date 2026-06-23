@@ -8,6 +8,7 @@ import (
 
 type ServiceStatus struct {
 	BackendRunning bool   `json:"backendRunning"`
+	BackendStatus  string `json:"backendStatus"`
 	BackendName    string `json:"backendName"`
 	VoponoCount    int    `json:"voponoCount"`
 }
@@ -21,6 +22,7 @@ func (a *App) GetServiceStatus() ServiceStatus {
 
 	return ServiceStatus{
 		BackendRunning: bStatus.Running,
+		BackendStatus:  bStatus.Status,
 		BackendName:    bStatus.Backend,
 		VoponoCount:    voponoCount,
 	}

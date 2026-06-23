@@ -1,17 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue';
-import { Terminal, Trash2 } from '@lucide/vue';
-import { EventsOn } from '../../../wailsjs/runtime/runtime';
+import { ref, watch, nextTick } from 'vue';
+import { Terminal, Trash2, Download } from '@lucide/vue';
+import { useTelemetry } from '../../composables/useTelemetry';
 
-interface LogEntry {
-  timestamp: string;
-  source: string;
-  message: string;
-}
-
-const logs = ref<LogEntry[]>([]);
+const { systemLogs: logs } = useTelemetry();
 const terminalRef = ref<HTMLElement | null>(null);
-let cleanupLogs: (() => void) | null = null;
 const autoScroll = ref(true);
 
 const getSourceColor = (source: string) => {
@@ -25,33 +18,35 @@ const clearLogs = () => {
   logs.value = [];
 };
 
+const downloadLogs = () => {
+  if (logs.value.length === 0) return;
+  const content = logs.value.map(l => `[${l.timestamp}] [${l.source}] ${l.message}`).join('\n');
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `xynet_logs_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 const handleScroll = () => {
   if (!terminalRef.value) return;
   const { scrollTop, scrollHeight, clientHeight } = terminalRef.value;
-  // If user scrolls up significantly, disable autoscroll
   autoScroll.value = scrollHeight - scrollTop - clientHeight < 50;
 };
 
-onMounted(() => {
-  cleanupLogs = EventsOn('app-log', (entry: LogEntry) => {
-    logs.value.push(entry);
-    if (logs.value.length > 5000) {
-      logs.value.shift(); // Keep last 5000 lines
-    }
-    
-    if (autoScroll.value) {
-      nextTick(() => {
-        if (terminalRef.value) {
-          terminalRef.value.scrollTop = terminalRef.value.scrollHeight;
-        }
-      });
-    }
-  });
-});
-
-onUnmounted(() => {
-  cleanupLogs?.();
-});
+watch(logs, () => {
+  if (autoScroll.value) {
+    nextTick(() => {
+      if (terminalRef.value) {
+        terminalRef.value.scrollTop = terminalRef.value.scrollHeight;
+      }
+    });
+  }
+}, { deep: true });
 </script>
 
 <template>
@@ -61,10 +56,16 @@ onUnmounted(() => {
         <Terminal :size="24" class="icon" />
         <h2>System Logs</h2>
       </div>
-      <button class="clear-btn" @click="clearLogs">
-        <Trash2 :size="16" />
-        Clear
-      </button>
+      <div class="actions-group">
+        <button class="btn download-btn" @click="downloadLogs">
+          <Download :size="16" />
+          Download
+        </button>
+        <button class="btn clear-btn" @click="clearLogs">
+          <Trash2 :size="16" />
+          Clear
+        </button>
+      </div>
     </div>
 
     <div class="terminal-container" ref="terminalRef" @scroll="handleScroll">
@@ -112,7 +113,12 @@ h2 {
   color: var(--text-secondary);
 }
 
-.clear-btn {
+.actions-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -126,15 +132,26 @@ h2 {
   font-size: 0.875rem;
 }
 
+.btn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
 .clear-btn:hover {
   background-color: rgba(239, 68, 68, 0.1);
   color: var(--accent-danger);
   border-color: var(--accent-danger);
 }
 
+.download-btn:hover {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
 .terminal-container {
   flex: 1;
-  background-color: #09090b; /* Very dark background for terminal */
+  background-color: #09090b;
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   padding: 1rem;
@@ -142,6 +159,8 @@ h2 {
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 0.8125rem;
   line-height: 1.5;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .empty-state {
@@ -173,5 +192,7 @@ h2 {
 
 .message {
   color: #e4e4e7;
+  user-select: text;
+  -webkit-user-select: text;
 }
 </style>

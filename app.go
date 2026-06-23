@@ -120,27 +120,35 @@ func (a *App) LaunchStrict(processName string, tunnelLabel string) (VoponoProces
 		return VoponoProcess{}, fmt.Errorf("load state: %w", err)
 	}
 
-	proxyMap := buildProxyMap(state.Proxies)
-	proxy, ok := proxyMap[tunnelLabel]
-	if !ok {
-		return VoponoProcess{}, fmt.Errorf("no config found for tunnel %q", tunnelLabel)
-	}
+	var cmd *exec.Cmd
 
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return VoponoProcess{}, err
-	}
-	strictDir := filepath.Join(configDir, "xynet", "strict")
-	if err := os.MkdirAll(strictDir, 0700); err != nil {
-		return VoponoProcess{}, err
-	}
+	if tunnelLabel == "Block" {
+		// Native Linux unshare: map user to root and create empty netns to blackhole all traffic
+		cmd = exec.Command("unshare", "-r", "-n", processName)
+	} else {
+		proxyMap := buildProxyMap(state.Proxies)
+		proxy, ok := proxyMap[tunnelLabel]
+		if !ok {
+			return VoponoProcess{}, fmt.Errorf("no config found for tunnel %q", tunnelLabel)
+		}
 
-	confPath := filepath.Join(strictDir, tunnelLabel+".conf")
-	if err := os.WriteFile(confPath, []byte(proxy.Content), 0600); err != nil {
-		return VoponoProcess{}, fmt.Errorf("write config: %w", err)
-	}
+		configDir, err := os.UserConfigDir()
+		if err != nil {
+			return VoponoProcess{}, err
+		}
+		strictDir := filepath.Join(configDir, "xynet", "strict")
+		if err := os.MkdirAll(strictDir, 0700); err != nil {
+			return VoponoProcess{}, err
+		}
 
-	cmd := exec.Command("pkexec", "vopono", "exec", "--custom", confPath, processName)
+		confPath := filepath.Join(strictDir, tunnelLabel+".conf")
+		if err := os.WriteFile(confPath, []byte(proxy.Content), 0600); err != nil {
+			return VoponoProcess{}, fmt.Errorf("write config: %w", err)
+		}
+
+		// Ensure vopono executes the application as the normal user, otherwise gui apps like firefox will fail to launch X11/Wayland displays
+		cmd = exec.Command("pkexec", "vopono", "exec", "--custom", confPath, processName)
+	}
 	
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()

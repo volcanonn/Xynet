@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"text/template"
 	"net"
 	"os"
@@ -23,7 +24,7 @@ var (
 	intentionalStop bool
 
 	daeCmd          *exec.Cmd
-	daeLogCmd       *exec.Cmd
+	daeActive       bool
 	daeLogMu        sync.Mutex
 
 	//go:embed templates/dae.tmpl
@@ -98,11 +99,16 @@ func (a *App) GetBackendStatus() BackendStatus {
 	}
 
 	daeLogMu.Lock()
-	running := daeCmd != nil && daeCmd.Process != nil
+	isProcessAlive := daeCmd != nil && daeCmd.Process != nil
+	isActive := daeActive
 	daeLogMu.Unlock()
 
+	running := isProcessAlive && isActive
 	status := "offline"
-	if running {
+	
+	if isProcessAlive && !isActive {
+		status = "suspended"
+	} else if running {
 		status = "active"
 	}
 
@@ -492,20 +498,29 @@ func (a *App) deployDae(rules []RoutingRule, state AppState) error {
 					return fmt.Errorf("dae backend does not support Hysteria2. Please switch to sing-box in Settings")
 				}
 
-				confPath := filepath.Join(wgDir, rule.TunnelLabel+".conf")
-				if err := os.WriteFile(confPath, []byte(proxy.Content), 0600); err != nil {
+				safeIfName := fmt.Sprintf("xywg%d", len(seenTunnels))
+				confPath := filepath.Join(wgDir, safeIfName+".conf")
+				
+				// Inject Table = off into the WireGuard config to prevent wg-quick from hijacking the global default route
+				re := regexp.MustCompile("(?i)\\[Interface\\]")
+				wgContent := re.ReplaceAllString(proxy.Content, "[Interface]\nTable = off")
+
+				// Strip DNS to prevent wg-quick from overwriting global resolv.conf and breaking bypass traffic
+				reDNS := regexp.MustCompile("(?im)^DNS\\s*=.*$")
+				wgContent = reDNS.ReplaceAllString(wgContent, "")
+
+				if err := os.WriteFile(confPath, []byte(wgContent), 0600); err != nil {
 					return fmt.Errorf("write wg config: %w", err)
 				}
 
 				table := tableBase + len(seenTunnels) - 1
-				ifName := rule.TunnelLabel
 
 				daeCmds = append(daeCmds,
 					fmt.Sprintf("wg-quick down %q 2>/dev/null || true", confPath),
 					fmt.Sprintf("wg-quick up %q", confPath),
 					fmt.Sprintf("ip rule del fwmark 0x%x table %d 2>/dev/null || true", fwmark, table),
 					fmt.Sprintf("ip rule add fwmark 0x%x table %d", fwmark, table),
-					fmt.Sprintf("ip route add default dev %q table %d 2>/dev/null || true", ifName, table),
+					fmt.Sprintf("ip route add default dev %q table %d 2>/dev/null || true", safeIfName, table),
 				)
 			}
 
@@ -525,62 +540,90 @@ func (a *App) deployDae(rules []RoutingRule, state AppState) error {
 	}
 
 	daeConfigPath := filepath.Join(configDir, "xynet", "config.dae")
-	if err := os.WriteFile(daeConfigPath, rendered.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(daeConfigPath, rendered.Bytes(), 0600); err != nil {
 		return fmt.Errorf("write dae config: %w", err)
 	}
-
-	if len(daeCmds) > 0 {
-		cmd := exec.Command("pkexec", "sh", "-c", strings.Join(daeCmds, " && "))
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("dae interface setup failed: %s (%w)", string(out), err)
-		}
-	}
+	os.Chmod(daeConfigPath, 0600) // Force chmod in case the file already existed with 0644
 
 	daeLogMu.Lock()
+	
+	var setupScript string
 	if daeCmd != nil && daeCmd.Process != nil {
-		daeCmd.Process.Kill()
-	}
-	
-	daeCmd = exec.Command("pkexec", daePath, "run", "-c", daeConfigPath)
-	stdout, _ := daeCmd.StdoutPipe()
-	stderr, _ := daeCmd.StderrPipe()
-	
-	if err := daeCmd.Start(); err != nil {
-		daeLogMu.Unlock()
-		return fmt.Errorf("failed to start dae: %w", err)
-	}
-	
-	go func() {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			a.EmitLog("dae", scanner.Text())
+		// Bundle suspend, interface setup, and reload into ONE pkexec chain
+		scriptLines := []string{
+			"set -e",
+			fmt.Sprintf("%q suspend", daePath),
 		}
-	}()
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			a.EmitLog("dae", scanner.Text())
+		scriptLines = append(scriptLines, daeCmds...)
+		scriptLines = append(scriptLines, fmt.Sprintf("%q reload", daePath))
+		
+		setupScript = strings.Join(scriptLines, "\n")
+		cmd := exec.Command("pkexec", "sh", "-c", setupScript)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			daeLogMu.Unlock()
+			return fmt.Errorf("dae reload chain failed: %s (%w)", string(out), err)
 		}
-	}()
-	
-	go func() {
-		daeCmd.Wait()
-		daeLogMu.Lock()
-		daeCmd = nil
-		daeLogMu.Unlock()
-	}()
-	
+	} else {
+		// Bundle interface setup for the first time into ONE pkexec chain
+			if len(daeCmds) > 0 {
+			scriptLines := []string{"set -e"}
+			scriptLines = append(scriptLines, daeCmds...)
+			setupScript = strings.Join(scriptLines, "\n")
+			
+			// Try to avoid a double prompt by running sh -c directly, but pkexec caching is strict for binary paths.
+			cmd := exec.Command("pkexec", "sh", "-c", setupScript)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				daeLogMu.Unlock()
+				return fmt.Errorf("dae interface setup failed: %s (%w)", string(out), err)
+			}
+		}
+
+		// Then launch dae in background (this is the 2nd prompt on initial launch, but 0 extra prompts on subsequent deploys!)
+		daeCmd = exec.Command("pkexec", daePath, "run", "-c", daeConfigPath)
+		stdout, _ := daeCmd.StdoutPipe()
+		stderr, _ := daeCmd.StderrPipe()
+		
+		if err := daeCmd.Start(); err != nil {
+			daeLogMu.Unlock()
+			return fmt.Errorf("failed to start dae: %w", err)
+		}
+		
+		go func() {
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				a.EmitLog("dae-engine", scanner.Text())
+			}
+		}()
+		go func() {
+			scanner := bufio.NewScanner(stderr)
+			for scanner.Scan() {
+				a.EmitLog("dae-engine", scanner.Text())
+			}
+		}()
+		
+		go func() {
+			daeCmd.Wait()
+			daeLogMu.Lock()
+			daeCmd = nil
+			daeActive = false
+			daeLogMu.Unlock()
+		}()
+	}
+	daeActive = true
 	daeLogMu.Unlock()
 
 	return nil
 }
 
 func (a *App) stopDae() error {
+	daePath := a.getDaePath()
+	
 	daeLogMu.Lock()
-	if daeCmd != nil && daeCmd.Process != nil {
-		daeCmd.Process.Kill()
-		daeCmd = nil
+	if daeCmd != nil && daeCmd.Process != nil && daePath != "" {
+		// Suspend routes so traffic bypasses normally without tearing down the background daemon
+		exec.Command("pkexec", daePath, "suspend").Run()
 	}
+	daeActive = false
 	daeLogMu.Unlock()
 
 	configDir, err := os.UserConfigDir()

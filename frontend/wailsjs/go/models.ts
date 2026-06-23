@@ -119,6 +119,7 @@ export namespace main {
 	}
 	export class ServiceStatus {
 	    backendRunning: boolean;
+	    backendStatus: string;
 	    backendName: string;
 	    voponoCount: number;
 	
@@ -129,6 +130,7 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.backendRunning = source["backendRunning"];
+	        this.backendStatus = source["backendStatus"];
 	        this.backendName = source["backendName"];
 	        this.voponoCount = source["voponoCount"];
 	    }

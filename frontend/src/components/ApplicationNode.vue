@@ -32,10 +32,14 @@ const isInFlow = computed(() => !!findNode(props.id));
 const mode = computed(() => props.data.mode || "Standard");
 const launching = ref(false);
 const toast = useToast();
-const { activeRules } = useActiveDeployment();
-const isActive = computed(() => {
+const { activeRules, voponoApps } = useActiveDeployment();
+const isActiveStandard = computed(() => {
     return activeRules.value.some((r: any) => r.processName === props.data.processName && mode.value === 'Standard');
 });
+const isActiveStrict = computed(() => {
+    return voponoApps.value.some((p: any) => p.appName === props.data.processName && mode.value === 'Strict');
+});
+const isActive = computed(() => isActiveStandard.value || isActiveStrict.value);
 
 const connectedTunnel = computed(() => {
     const edges = getConnectedEdges(props.id);
@@ -49,8 +53,10 @@ const canLaunch = computed(() => {
     if (mode.value !== "Strict") return false;
     const tunnel = connectedTunnel.value;
     if (!tunnel) return false;
-    return tunnel.data?.type === "WireGuard";
+    return tunnel.data?.type === "WireGuard" || tunnel.data?.label === "Block";
 });
+
+const { saveState } = useAppState();
 
 const toggleMode = () => {
     if (!updateNodeData) return;
@@ -59,6 +65,11 @@ const toggleMode = () => {
         if (!confirm("Switch to Strict mode?\n\nStrict mode launches the app inside a network namespace for complete isolation. You must use the Launch button to start it.")) return;
     }
     updateNodeData(props.id, { ...props.data, mode: newMode });
+    
+    // Ensure the global state is updated immediately so it persists across reloads
+    setTimeout(() => {
+        saveState();
+    }, 100);
 };
 
 const launchApp = async () => {
@@ -77,7 +88,7 @@ const launchApp = async () => {
 </script>
 
 <template>
-    <div class="app-node" :class="{ 'strict-mode': mode === 'Strict', 'is-active-route': isActive }">
+    <div class="app-node" :class="{ 'strict-mode': mode === 'Strict', 'is-active-route': isActiveStandard, 'is-active-strict': isActiveStrict }">
         <div class="node-content">
             <div class="icon-container">
                 <img v-if="data.icon" :src="data.icon" class="icon-img" />
@@ -141,6 +152,10 @@ const launchApp = async () => {
 .app-node.is-active-route {
     border-color: var(--accent-success);
     box-shadow: 0 0 0 1px var(--accent-success);
+}
+.app-node.is-active-strict {
+    border-color: #a855f7;
+    box-shadow: 0 0 0 1px #a855f7;
 }
 .vue-flow__node-application.selected .app-node {
     border-color: var(--accent-primary);

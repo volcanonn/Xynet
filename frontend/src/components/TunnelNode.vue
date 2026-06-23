@@ -38,7 +38,7 @@ const isHovered = computed(() => dragWire?.hoveredTunnelId === props.id);
 
 const connectedEdges = computed(() =>
     edges.value.filter(
-        (e) => e.target === props.id && e.id !== dragWire?.originalEdgeId,
+        (e: any) => e.target === props.id && e.id !== dragWire?.originalEdgeId,
     ),
 );
 const isEmpty = computed(() => connectedEdges.value.length === 0);
@@ -53,10 +53,14 @@ const ghostOffset = useWireStacking(
 
 const { appState } = useAppState();
 const measuredLatency = ref<string>("");
-const { activeRules } = useActiveDeployment();
-const isActive = computed(() => {
+const { activeRules, voponoApps } = useActiveDeployment();
+const isActiveStandard = computed(() => {
     return activeRules.value.some((r: any) => r.tunnelId === props.id);
 });
+const isActiveStrict = computed(() => {
+    return voponoApps.value.some((p: any) => p.configName === props.data.label);
+});
+const isActive = computed(() => isActiveStandard.value || isActiveStrict.value);
 
 onMounted(async () => {
     if (props.data.type === 'WireGuard' || props.data.type === 'Hysteria2') {
@@ -73,7 +77,7 @@ onMounted(async () => {
 </script>
 
 <template>
-    <div class="tunnel-node" :class="{ 'pulse-animate': isHovered && isEmpty, 'is-active-route': isActive }">
+    <div class="tunnel-node" :class="{ 'pulse-animate': isHovered && isEmpty, 'is-active-route': isActiveStandard, 'is-active-strict': isActiveStrict }">
         <Handle
             v-if="isInFlow"
             id="target"
@@ -170,6 +174,10 @@ onMounted(async () => {
 .tunnel-node.is-active-route {
     border-color: var(--accent-success);
     box-shadow: 0 0 0 1px var(--accent-success);
+}
+.tunnel-node.is-active-strict {
+    border-color: #a855f7;
+    box-shadow: 0 0 0 1px #a855f7;
 }
 
 .target-handle {

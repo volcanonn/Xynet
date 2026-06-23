@@ -11,7 +11,7 @@ import { useActiveDeployment } from '../composables/useActiveDeployment';
 
 const { appState } = useAppState();
 const toast = useToast();
-const { upload, download, backendRunning, backendName, voponoCount, deployedAppCount, deployedTunnelCount } = useTelemetry();
+const { upload, download, backendRunning, backendStatus, backendName, voponoCount, deployedAppCount, deployedTunnelCount } = useTelemetry();
 const { activeRules } = useActiveDeployment();
 
 const deploying = ref(false);
@@ -41,11 +41,15 @@ const checkStatus = async () => {
     }
 };
 
+const { voponoApps } = useActiveDeployment();
+
 const refreshVoponoCount = async () => {
     try {
         const procs = await ListVoponoProcesses();
+        voponoApps.value = procs || [];
         voponoCount.value = procs?.length || 0;
     } catch {
+        voponoApps.value = [];
         voponoCount.value = 0;
     }
 };
@@ -61,7 +65,6 @@ onMounted(() => {
 onUnmounted(() => {
     cleanupVoponoStart?.();
     cleanupVoponoEnd?.();
-
 });
 
 const undeployConfig = async () => {
@@ -111,7 +114,7 @@ const deployConfig = async () => {
     </div>
 
     <div class="actions">
-      <button v-if="backendRunning" class="undeploy-btn" @click="undeployConfig" :disabled="deploying">
+      <button v-if="backendStatus === 'active'" class="undeploy-btn" @click="undeployConfig" :disabled="deploying">
         Disconnect
       </button>
       <button class="deploy-btn" @click="deployConfig" :disabled="deploying">
