@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 var (
@@ -229,7 +230,7 @@ func (a *App) deploySingbox(rules []RoutingRule, state AppState) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(configDir, "nodenet")
+	dir := filepath.Join(configDir, "xynet")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -289,10 +290,7 @@ func (a *App) StopSingbox() error {
 
 	select {
 	case <-done:
-	case <-make(chan struct{}): // 3 second timeout via goroutine
-		go func() {
-			<-done
-		}()
+	case <-time.After(3 * time.Second):
 		cmd.Process.Kill()
 	}
 
@@ -311,7 +309,7 @@ func (a *App) WriteSingboxConfig(config string) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(configDir, "nodenet")
+	dir := filepath.Join(configDir, "xynet")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -331,7 +329,7 @@ func (a *App) deployDae(rules []RoutingRule, state AppState) error {
 	if err != nil {
 		return err
 	}
-	wgDir := filepath.Join(configDir, "nodenet", "wg-configs")
+	wgDir := filepath.Join(configDir, "xynet", "wg-configs")
 	if err := os.MkdirAll(wgDir, 0700); err != nil {
 		return err
 	}

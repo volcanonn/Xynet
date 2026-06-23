@@ -25,7 +25,7 @@ func getConfigPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	appDir := filepath.Join(configDir, "nodenet")
+	appDir := filepath.Join(configDir, "xynet")
 	if err := os.MkdirAll(appDir, 0755); err != nil {
 		return "", err
 	}

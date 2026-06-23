@@ -17,18 +17,34 @@ Wire Firefox to AirVPN on the canvas, click Deploy, and Firefox's traffic routes
 **Package Manager & Security:** Deno (replaces Node/NPM to prevent supply chain attacks).
 
 **Routing Backends (pluggable):**
-- **sing-box** (default) — Userspace TUN proxy with native WireGuard and Hysteria2 support. Cross-platform (Linux now, Windows/macOS planned).
+- **sing-box** (default) — Userspace TUN proxy with native WireGuard and Hysteria2 support. Cross-platform (Linux now, Windows/macOS planned). **Automatically installed as a dependency on Arch Linux**.
 - **dae** (advanced, Linux-only) — eBPF TC hooks for kernel-level routing. Bypassed traffic never enters userspace.
 
 **Strict Mode Isolation:** Vopono (Linux network namespace launcher for full traffic isolation).
 
 **System Tray:** fyne.io/systray (pure DBus StatusNotifierItem).
 
+**WireGuard Parsing:** `gopkg.in/ini.v1` (robust, battle-tested standard Go INI parser).
+
 **Network Stats:** shirou/gopsutil (cross-platform interface bandwidth monitoring).
 
 **IDE:** Zed (Configured with Deno and Vue.js LSPs).
 
-## 3. Routing Architecture
+## 3. Installation (Arch Linux / AUR)
+
+Xynet is packaged and ready for the AUR. Because `sing-box` is explicitly declared as a dependency in the `PKGBUILD`, your AUR helper will automatically download and install it for you alongside Xynet.
+
+```bash
+# Using an AUR helper like yay
+yay -S xynet
+
+# Or using paru
+paru -S xynet
+```
+
+When deploying the `sing-box` backend, Xynet launches `sing-box` directly as a managed subprocess using `pkexec` (PolicyKit). A custom polkit policy (`org.xynet.pkexec.sing-box.policy`) ensures users see a clean "Xynet needs administrator privileges..." prompt rather than a generic authentication window. There is no need to manually enable or manage a `sing-box` systemd service.
+
+## 4. Routing Architecture
 
 Xynet supports two routing modes per application:
 
@@ -144,13 +160,15 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 deno add npm:@vue-flow/core
 ```
 
-## 8. Instructions for the LLM
+## 9. Instructions for the LLM
 
 When acting as a coding assistant for this project:
 
 - The routing backends are sing-box (default) and dae (Linux-only advanced option).
 - Config generation happens in Go (`deploy.go`), not in the frontend.
-- WireGuard configs are parsed from imported `.conf` files using `wgparser.go`.
+- WireGuard configs are parsed from imported `.conf` files using `wgparser.go` which leverages the battle-tested `gopkg.in/ini.v1` package.
+- `sing-box` is managed as a direct subprocess (`pkexec sing-box run`), NOT via systemd. This makes it cross-platform compatible.
+- Imported configs in the `Proxies` tab are saved to the persistent state via `useAppState()`.
 - Strict mode uses Vopono network namespaces — apps must be launched inside the namespace, not attached after the fact.
 - The project targets Linux now but is designed for future Windows/macOS support. sing-box is the cross-platform path; dae is Linux-only.
 - Do NOT suggest adding Electron, Node.js, or heavy web dependencies.

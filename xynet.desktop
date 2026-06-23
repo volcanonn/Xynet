@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Xynet
+Comment=Visual node-based VPN and proxy manager with split-tunneling
+Exec=xynet
+Icon=xynet
+Terminal=false
+Type=Application
+Categories=Network;VPN;
+Keywords=VPN;proxy;WireGuard;split-tunnel;

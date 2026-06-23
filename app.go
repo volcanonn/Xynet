@@ -90,7 +90,7 @@ func (a *App) LaunchStrict(processName string, tunnelLabel string) (VoponoProces
 	if err != nil {
 		return VoponoProcess{}, err
 	}
-	strictDir := filepath.Join(configDir, "nodenet", "strict")
+	strictDir := filepath.Join(configDir, "xynet", "strict")
 	if err := os.MkdirAll(strictDir, 0700); err != nil {
 		return VoponoProcess{}, err
 	}
