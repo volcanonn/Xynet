@@ -15,12 +15,24 @@ interface ProxyConfig {
   content: string;
 }
 
-const expandedCountries = computed(() => new Set(
-  configs.value.map(c => c.country)
-));
-const expandedCitiesSet = computed(() => new Set(
-  configs.value.map(c => `${c.country}:${c.city}`)
-));
+// Collapsible group state. Both start fully expanded so all imported proxies
+// are visible on first load; the user can collapse countries/cities to manage
+// large lists. Keys are "country" and "country:city".
+const collapsedCountries = ref<Set<string>>(new Set());
+const collapsedCities = ref<Set<string>>(new Set());
+
+const toggleCountry = (country: string) => {
+  const next = new Set(collapsedCountries.value);
+  next.has(country) ? next.delete(country) : next.add(country);
+  collapsedCountries.value = next;
+};
+const toggleCity = (key: string) => {
+  const next = new Set(collapsedCities.value);
+  next.has(key) ? next.delete(key) : next.add(key);
+  collapsedCities.value = next;
+};
+const isCountryCollapsed = (country: string) => collapsedCountries.value.has(country);
+const isCityCollapsed = (key: string) => collapsedCities.value.has(key);
 
 const editingName = ref('');
 const editNameVal = ref('');
@@ -91,7 +103,7 @@ const configs = computed<ProxyConfig[]>(() => {
   return appState.value.proxies.map(p => {
     let country = 'Imported';
     let city = 'Unknown';
-    const parts = p.name.replace(/\.conf$/, '').split(/[-_]/);
+    const parts = p.name.replace(/\.(conf|txt)$/, '').split(/[-_]/);
     if (parts.length >= 2 && parts[0].length <= 3) {
       country = parts[0].toUpperCase();
       city = parts[1].toUpperCase();
@@ -155,21 +167,21 @@ const removeConfig = (name: string) => {
 
     <div v-if="configs.length > 0" class="proxy-list-container">
       <div v-for="(cities, country) in groupedConfigs" :key="country" class="country-group">
-        <div class="group-header">
-          <ChevronDown :size="18" />
+        <div class="group-header" @click="toggleCountry(country)">
+          <ChevronDown :size="18" class="chevron" :class="{ rotated: isCountryCollapsed(country) }" />
           <span class="group-title">{{ country }}</span>
           <span class="badge">{{ Object.values(cities).flat().length }}</span>
         </div>
 
-        <div class="cities-container">
+        <div class="cities-container" v-show="!isCountryCollapsed(country)">
           <div v-for="(serverList, city) in cities" :key="city" class="city-group">
-            <div class="group-header city-header">
-              <ChevronDown :size="16" />
+            <div class="group-header city-header" @click="toggleCity(`${country}:${city}`)">
+              <ChevronDown :size="16" class="chevron" :class="{ rotated: isCityCollapsed(`${country}:${city}`) }" />
               <span class="group-title">{{ city }}</span>
               <span class="badge">{{ serverList.length }}</span>
             </div>
 
-            <div class="servers-container">
+            <div class="servers-container" v-show="!isCityCollapsed(`${country}:${city}`)">
               <template v-for="server in serverList" :key="server.name">
                 <div class="server-item">
                   <div class="server-info">
@@ -297,6 +309,14 @@ h2 {
   color: var(--text-primary, #f8fafc);
   font-weight: 600;
   user-select: none;
+}
+
+.chevron {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.chevron.rotated {
+  transform: rotate(-90deg);
 }
 
 .group-header:hover {

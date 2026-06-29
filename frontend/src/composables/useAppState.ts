@@ -12,8 +12,10 @@ export function useAppState() {
             const state = await LoadState();
             appState.value = state;
 
-            // Set defaults if empty
-            if (!appState.value.canvasElements || appState.value.canvasElements.length === 0) {
+            // Set defaults only when the field is absent. An intentionally empty
+            // canvas ([]) must be preserved, so we must NOT reinject defaults on
+            // length === 0 (see issue.md §1.2 — the "Blank Canvas Bug").
+            if (!appState.value.canvasElements) {
                 appState.value.canvasElements = [
                     { id: "app-other", type: "application", position: { x: 100, y: 100 }, data: { label: "Other", mode: "Standard" }, deletable: false },
                     { id: "tun-direct", type: "tunnel", position: { x: 600, y: 100 }, data: { label: "Direct", type: "Bypass" }, deletable: false },

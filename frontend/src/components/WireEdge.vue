@@ -4,38 +4,58 @@ import type { EdgeProps } from "@vue-flow/core";
 import { computed, inject } from "vue";
 import { useWireStacking } from "../composables/useWireStacking";
 import { useActiveDeployment } from "../composables/useActiveDeployment";
+import { useAppState } from "../composables/useAppState";
 
 const props = defineProps<EdgeProps>();
-const { edges, findNode } = useVueFlow();
+const { edges } = useVueFlow();
 
 const dragWire = inject<any>("dragWire");
 const startPlugDrag = inject<Function>("startPlugDrag");
-const { activeRules } = useActiveDeployment();
+const { activeRules, voponoApps } = useActiveDeployment();
+const { appState } = useAppState();
 
-const isActive = computed(() => {
-    return activeRules.value.some((r: any) => r.tunnelId === props.target);
+const strokeColor = computed(() => {
+    const sourceNode = appState.value?.canvasElements?.find((el: any) => el.id === props.source);
+    const targetNode = appState.value?.canvasElements?.find((el: any) => el.id === props.target);
+
+    const processName = sourceNode?.data?.processName;
+    const tunnelLabel = targetNode?.data?.label;
+    const mode = sourceNode?.data?.mode || 'Standard';
+
+    if (mode === 'Strict' && processName && tunnelLabel) {
+        const isStrictActive = voponoApps.value.some((p: any) =>
+            p.appName === processName && p.configName === tunnelLabel
+        );
+        if (isStrictActive) return '#a855f7';
+    }
+
+    let isStandardActive = false;
+    if (processName) {
+        isStandardActive = activeRules.value.some((r: any) =>
+            r.tunnelId === props.target && r.processName === processName
+        );
+    } else {
+        isStandardActive = activeRules.value.some((r: any) => r.tunnelId === props.target);
+    }
+
+    if (isStandardActive) return 'var(--accent-success)';
+
+    return 'var(--border-color)';
 });
 
-
-// Target offset for stacking
 const targetOffset = useWireStacking(
     () => props.target,
     () => props.source,
     dragWire
 );
 
-const activeTargetX = computed(() => {
-    const node = findNode(props.target);
-    if (!node) return props.targetX;
-    return (node.computedPosition?.x ?? node.position.x) + 1;
-});
+const activeTargetX = computed(() => props.targetX + 6);
 const activeTargetY = computed(() => props.targetY + (targetOffset.value ?? 0));
 
 const pathParams = computed(() => ({
     sourceX: props.sourceX,
     sourceY: props.sourceY,
     sourcePosition: Position.Right,
-    // -12: Wire ends perfectly at the back of the 12px-wide plug
     targetX: activeTargetX.value - 12,
     targetY: activeTargetY.value,
     targetPosition: Position.Left,
@@ -57,18 +77,15 @@ export default { inheritAttrs: false };
 
 <template>
     <g class="wire-edge-group">
-        <!-- Main wire -->
-        <BaseEdge :path="path[0]" :style="{ ...props.style, stroke: isActive ? 'var(--accent-success)' : 'var(--border-color)' }" style="pointer-events: none;" />
+        <BaseEdge :path="path[0]" :style="{ ...props.style, stroke: strokeColor }" style="pointer-events: none;" />
 
-        <!-- Interactive Plug -->
         <g
             :transform="`translate(${activeTargetX}, ${activeTargetY})`"
             style="pointer-events: all; cursor: grab;"
             @pointerdown="onPointerDown"
         >
-            <!-- Invisible larger hit area for easier grabbing -->
             <rect x="-20" y="-15" width="30" height="30" fill="transparent" />
-            
+
             <rect
                 x="-12"
                 y="-4"
@@ -76,12 +93,12 @@ export default { inheritAttrs: false };
                 height="8"
                 rx="2"
                 fill="var(--bg-card)"
-                :stroke="isActive ? 'var(--accent-success)' : 'var(--border-color)'"
+                :stroke="strokeColor"
                 stroke-width="1.5"
             />
             <path
                 d="M 0 -2 L 4 -2 M 0 2 L 4 2"
-                :stroke="isActive ? 'var(--accent-success)' : 'var(--border-color)'"
+                :stroke="strokeColor"
                 stroke-width="1.5"
                 stroke-linecap="round"
             />

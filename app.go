@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -82,6 +83,22 @@ func (a *App) GetInterfaces() []string {
 func (a *App) shutdown(ctx context.Context) {
 	a.StopSingbox()
 
+	// Tear down the dae backend too: stopDae suspends the daemon and runs
+	// wg-quick down + ip rule flush via pkexec (best-effort on quit — we
+	// ignore the error since we're exiting). Without this, quitting on the
+	// dae backend leaks the root daemon, xywg* interfaces, and ip rule
+	// entries. See INTERNALS.md "Zombie Process Bug".
+	a.stopDae()
+
+	// stopDae only suspends the daemon; kill the tracked process so it
+	// doesn't linger as a root subprocess after exit.
+	daeLogMu.Lock()
+	daeProc := daeCmd
+	daeLogMu.Unlock()
+	if daeProc != nil && daeProc.Process != nil {
+		daeProc.Process.Signal(syscall.SIGTERM)
+	}
+
 	a.voponoMu.Lock()
 	procs := make(map[string]*exec.Cmd, len(a.voponoProcesses))
 	for k, v := range a.voponoProcesses {
@@ -142,14 +159,87 @@ func (a *App) LaunchStrict(processName string, tunnelLabel string) (VoponoProces
 		}
 
 		confPath := filepath.Join(strictDir, tunnelLabel+".conf")
-		if err := os.WriteFile(confPath, []byte(proxy.Content), 0600); err != nil {
+
+		// Strip DNS from config to prevent wg-quick from invoking resolvconf inside the namespace
+		reDNS := regexp.MustCompile("(?im)^DNS\\s*=.*$")
+		wgContent := reDNS.ReplaceAllString(proxy.Content, "")
+
+		// Resolve Endpoints to IP addresses to prevent vopono namespace catch-22
+		reEndpoint := regexp.MustCompile("(?im)^Endpoint\\s*=\\s*(.*)$")
+		wgContent = reEndpoint.ReplaceAllStringFunc(wgContent, func(m string) string {
+			parts := strings.SplitN(m, "=", 2)
+			if len(parts) != 2 {
+				return m
+			}
+			endpointStr := strings.TrimSpace(parts[1])
+			host, portStr, err := net.SplitHostPort(endpointStr)
+			if err != nil {
+				host = endpointStr
+				portStr = "51820"
+			}
+			ips, err := net.LookupIP(host)
+			if err == nil && len(ips) > 0 {
+				ip := ips[0].String()
+				for _, i := range ips {
+					if i.To4() != nil {
+						ip = i.String()
+						break
+					}
+				}
+				return fmt.Sprintf("Endpoint = %s:%s", ip, portStr)
+			}
+			return m
+		})
+
+		if err := os.WriteFile(confPath, []byte(wgContent), 0600); err != nil {
 			return VoponoProcess{}, fmt.Errorf("write config: %w", err)
 		}
 
 		// Ensure vopono executes the application as the normal user, otherwise gui apps like firefox will fail to launch X11/Wayland displays
-		cmd = exec.Command("pkexec", "vopono", "exec", "--custom", confPath, processName)
+		// pkexec strips environment variables, so we explicitly inject X11/Wayland vars using env
+		envVars := []string{
+			"DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR",
+			"XDG_CONFIG_HOME", "XDG_SESSION_TYPE", "MOZ_ENABLE_WAYLAND",
+			"QT_QPA_PLATFORM", "GTK_MODULES", "GTK3_MODULES", "I3SOCK",
+			"HOME", "USER", "LOGNAME", "PWD", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP",
+			"HYPRLAND_INSTANCE_SIGNATURE", "LANG", "LC_ALL", "PATH", "TERM", "COLORTERM",
+		}
+
+		var envArgs []string
+		for _, env := range envVars {
+			if val := os.Getenv(env); val != "" {
+				envArgs = append(envArgs, fmt.Sprintf("%s=%s", env, val))
+			}
+		}
+
+		var fullCommand string
+		if len(envArgs) > 0 {
+			fullCommand = fmt.Sprintf("env %s %s", strings.Join(envArgs, " "), processName)
+		} else {
+			fullCommand = processName
+		}
+
+		currentUser := os.Getenv("USER")
+		if currentUser == "" {
+			currentUser = "nobody"
+		}
+
+		wg, _ := ParseWireGuardConfig(proxy.Content)
+		var dns string
+		if len(wg.DNS) > 0 {
+			dns = wg.DNS[0]
+		} else {
+			dns = "1.1.1.1" // Fallback to Cloudflare if config has no DNS
+		}
+
+		workingDir := os.Getenv("HOME")
+		if workingDir == "" {
+			workingDir = "/"
+		}
+
+		cmd = exec.Command("pkexec", "vopono", "exec", "--custom", confPath, "--firewall", "iptables", "--disable-ipv6", "--user", currentUser, "--working-directory", workingDir, "--dns", dns, fullCommand)
 	}
-	
+
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 
@@ -207,6 +297,10 @@ func (a *App) LaunchStrict(processName string, tunnelLabel string) (VoponoProces
 func (a *App) KillVopono(id string) error {
 	a.voponoMu.Lock()
 	cmd, exists := a.voponoProcesses[id]
+	if exists {
+		delete(a.voponoProcesses, id)
+		delete(a.processInfo, id)
+	}
 	a.voponoMu.Unlock()
 
 	if !exists {
@@ -219,18 +313,14 @@ func (a *App) KillVopono(id string) error {
 
 	cmd.Process.Signal(syscall.SIGTERM)
 
-	done := make(chan struct{})
-	go func() {
-		cmd.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		return nil
-	case <-time.After(3 * time.Second):
-		return cmd.Process.Kill()
+	for i := 0; i < 30; i++ {
+		if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
+
+	return cmd.Process.Kill()
 }
 
 // ListVoponoProcesses returns all currently running tracked processes
@@ -329,7 +419,7 @@ func (a *App) ImportProxyConfigs() ([]ImportedProxy, error) {
 	}
 
 	if len(imported) == 0 && len(errs) > 0 {
-		return nil, fmt.Errorf(strings.Join(errs, "\n"))
+		return nil, fmt.Errorf("%s", strings.Join(errs, "\n"))
 	}
 
 	return imported, nil

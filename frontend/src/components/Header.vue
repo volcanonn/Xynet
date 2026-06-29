@@ -36,6 +36,11 @@ const checkStatus = async () => {
         const status = await GetBackendStatus();
         backendRunning.value = status.running;
         backendName.value = status.backend;
+        // Mirror the granular status ('active' | 'suspended' | 'offline') so the
+        // Disconnect button (gated on backendStatus === 'active') appears
+        // immediately after Deploy/Undeploy, instead of waiting up to 2s for the
+        // next service-status event tick.
+        backendStatus.value = status.status;
     } catch {
         backendRunning.value = false;
     }

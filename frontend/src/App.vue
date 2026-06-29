@@ -11,16 +11,24 @@ import { useToast } from './composables/useToast';
 import { AlertCircle, CheckCircle, Info } from '@lucide/vue';
 
 import { useAppState } from './composables/useAppState';
-import { onMounted } from 'vue';
+import { onMounted, watch } from 'vue';
 
 const activeTab = ref('routing');
 const { toasts } = useToast();
 const { appState } = useAppState();
 
+const applyTheme = (theme?: string) => {
+  document.body.className = theme === 'light' ? 'light-theme' : '';
+};
+
 onMounted(() => {
-  if (appState.value?.settings?.theme === 'light') {
-    document.body.className = 'light-theme';
-  }
+  // appState is null here — loadState() runs async from Canvas.vue. Apply now
+  // if state already resolved, and watch so the theme lands the moment it does.
+  applyTheme(appState.value?.settings?.theme);
+  watch(
+    () => appState.value?.settings?.theme,
+    (theme) => applyTheme(theme),
+  );
 });
 </script>
 

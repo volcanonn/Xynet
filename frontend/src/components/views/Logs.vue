@@ -72,7 +72,7 @@ watch(logs, () => {
       <div v-if="logs.length === 0" class="empty-state">
         Waiting for routing engines to start...
       </div>
-      <div v-for="(log, idx) in logs" :key="idx" class="log-line">
+      <div v-for="log in logs" :key="log.id" class="log-line">
         <span class="timestamp">[{{ log.timestamp }}]</span>
         <span class="source" :style="{ color: getSourceColor(log.source) }">[{{ log.source }}]</span>
         <span class="message">{{ log.message }}</span>

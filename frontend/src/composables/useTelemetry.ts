@@ -11,6 +11,7 @@ export const deployedAppCount = ref(0);
 export const deployedTunnelCount = ref(0);
 
 export interface LogEntry {
+  id: number;
   timestamp: string;
   source: string;
   message: string;
@@ -18,6 +19,7 @@ export interface LogEntry {
 export const systemLogs = ref<LogEntry[]>([]);
 
 let initialized = false;
+let nextLogId = 0;
 
 export function useTelemetry() {
     if (!initialized) {
@@ -26,8 +28,11 @@ export function useTelemetry() {
             download.value = stats.download;
         });
 
-        EventsOn('app-log', (entry: LogEntry) => {
-            systemLogs.value.push(entry);
+        EventsOn('app-log', (entry: { timestamp: string; source: string; message: string }) => {
+            // Assign a stable monotonic id so Logs.vue can key on it. Index-based
+            // keys break when the buffer shift()s from the front (cap 5000):
+            // every shift would change every index and force a full re-render.
+            systemLogs.value.push({ id: nextLogId++, ...entry });
             if (systemLogs.value.length > 5000) {
                 systemLogs.value.shift();
             }

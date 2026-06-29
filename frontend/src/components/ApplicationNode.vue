@@ -56,20 +56,36 @@ const canLaunch = computed(() => {
     return tunnel.data?.type === "WireGuard" || tunnel.data?.label === "Block";
 });
 
-const { saveState } = useAppState();
+const { appState, saveState } = useAppState();
 
 const toggleMode = () => {
     if (!updateNodeData) return;
     const newMode = mode.value === "Standard" ? "Strict" : "Standard";
     if (newMode === "Strict") {
+        // Strict mode launches the app inside a Vopono namespace with a
+        // WireGuard config. Hysteria2 has no kernel interface (it's a
+        // userspace QUIC protocol) and Block is handled natively by unshare,
+        // so only WireGuard and Block tunnels are launchable in Strict mode.
+        // Reject the toggle when wired to Hysteria2 rather than stranding the
+        // app in Strict with no Launch button and no deploy path.
+        const tunnel = connectedTunnel.value;
+        const isHysteria2 = tunnel?.data?.type === "Hysteria2";
+        if (isHysteria2) {
+            toast.error("Strict mode requires a WireGuard or Block tunnel. Hysteria2 is userspace-only — rewire to a WireGuard tunnel first.");
+            return;
+        }
         if (!confirm("Switch to Strict mode?\n\nStrict mode launches the app inside a network namespace for complete isolation. You must use the Launch button to start it.")) return;
     }
     updateNodeData(props.id, { ...props.data, mode: newMode });
-    
-    // Ensure the global state is updated immediately so it persists across reloads
-    setTimeout(() => {
-        saveState();
-    }, 100);
+
+    if (appState.value && appState.value.canvasElements) {
+        const nodeInState = appState.value.canvasElements.find((el: any) => el.id === props.id);
+        if (nodeInState && nodeInState.data) {
+            nodeInState.data.mode = newMode;
+        }
+    }
+
+    saveState();
 };
 
 const launchApp = async () => {
